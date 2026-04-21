@@ -12,19 +12,28 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
 
+  // 🔥 AUTO REDIRECT IF ALREADY LOGGED IN
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        navigate("/");
+      }
+    };
+    checkUser();
+  }, [navigate]);
+
+  // 🔥 AUTH STATE LISTENER (IMPORTANT)
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log("EVENT:", event);
-
         if (event === "SIGNED_IN" && session) {
-          toast.success("Login successful!");
-
-          // redirect after login
-          navigate("/"); // dashboard as home
+          toast.success("Welcome back!");
+          navigate("/");
         }
       },
     );
@@ -35,55 +44,65 @@ export default function Login() {
   }, [navigate]);
 
   const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-    });
+    await supabase.auth.signInWithOAuth({ provider: "google" });
   };
 
   const handleGithubLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "github",
-    });
+    await supabase.auth.signInWithOAuth({ provider: "github" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isLogin) {
-      // 🔐 LOGIN
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    // 🔥 VALIDATION
+    if (!email || !password) {
+      toast.error("Email & Password required");
+      return;
+    }
 
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
+    if (!isLogin && !name) {
+      toast.error("Full name is required");
+      return;
+    }
 
-      if (data.session) {
-        toast.success("Login successful!");
-        navigate("/"); // redirect to dashboard
-      }
-    } else {
-      // 📝 SIGNUP
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name,
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        // 🔐 LOGIN
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+
+        if (data.session) {
+          await supabase.auth.refreshSession(); // 🔥 REFRESH TO GET USER DATA
+          toast.success("Login successful!");
+          navigate("/");
+        }
+      } else {
+        // 📝 SIGNUP
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name, // 🔥 IMPORTANT
+            },
           },
-        },
-      });
+        });
 
-      if (error) {
-        toast.error(error.message);
-        return;
+        if (error) throw error;
+
+        toast.success("Signup successful! Please login.");
+        setIsLogin(true);
       }
-
-      toast.success("Signup successful! Please login.");
-      setIsLogin(true);
+    } catch (err: any) {
+      toast.error(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -142,14 +161,14 @@ export default function Login() {
             />
             <label
               className="absolute left-3 -top-2 px-1 text-sm bg-white text-gray-500 transition-all duration-200
-      peer-placeholder-shown:top-3
-      peer-placeholder-shown:text-base
-      peer-placeholder-shown:text-gray-400
-      peer-placeholder-shown:bg-transparent
-      peer-focus:-top-2
-      peer-focus:text-sm
-      peer-focus:text-blue-600
-      peer-focus:bg-white"
+                  peer-placeholder-shown:top-3
+                  peer-placeholder-shown:text-base
+                  peer-placeholder-shown:text-gray-400
+                  peer-placeholder-shown:bg-transparent
+                  peer-focus:-top-2
+                  peer-focus:text-sm
+                  peer-focus:text-blue-600
+                  peer-focus:bg-white"
             >
               email address
             </label>
