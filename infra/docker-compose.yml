@@ -1,25 +1,26 @@
-version: "3.9"
-
 services:
   backend:
-    build: ./backend
+    build: ../backend
+    container_name: vectronyx_backend
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ../backend/.env
+    volumes:
+      - ../backend:/app
+    restart: always
 
   frontend:
-    build: ./frontend
+    build: ../frontend
+    container_name: vectronyx_frontend
     ports:
       - "5173:5173"
     depends_on:
       - backend
-
-  db:
-    image: postgres:15
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: cognexis
-    ports:
-      - "5432:5432"
+      - CHOKIDAR_USEPOLLING=true
+    command: pnpm run dev -- --host
+    restart: always

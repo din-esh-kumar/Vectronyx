@@ -30,7 +30,9 @@ asyncpg==0.29.0                   # async PostgreSQL driver
 # ----------------------------
 # AI / LLM
 # ----------------------------
-ollama==0.3.1                     # Ollama Python client (Llama 3)
+groq>=0.9.0                       # Groq Cloud API Client (Fast Llama 3)
+langchain-groq>=0.1.9             # LangChain Groq integration
+ollama==0.3.1                     # Ollama Python client (Local Llama 3)
 langchain==0.2.16                 # Agent orchestration (ReAct)
 langchain-community==0.2.16       # Community integrations
 langchain-core==0.2.38            # Core abstractions
