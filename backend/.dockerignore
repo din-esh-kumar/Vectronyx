@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+.git
+.gitignore
+node_modules
+dist
+build
+.cache
+pytest_cache
+mypy_cache
+vector_store
+*.log
