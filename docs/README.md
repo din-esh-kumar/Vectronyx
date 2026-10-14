@@ -13,7 +13,7 @@ Welcome to the official technical documentation for **Vectronyx AI Workbench**. 
 | [**Getting Started**](./GETTING_STARTED.md) | Prerequisites, environment setup, local installation (native & Docker), and verification steps. | All Contributors |
 | [**AI Modules Deep Dive**](./AI_MODULES.md) | Detailed breakdown of the 3 core AI systems: Memory System, Research Agent, and Data Analyst. | AI Engineers, Data Scientists |
 | [**API Reference**](./API_REFERENCE.md) | GraphQL schema, Strawberry resolvers, REST endpoints, request/response payloads, and authentication. | Full-Stack & API Developers |
-| [**Database & Vector Store Schema**](./DATABASE_SCHEMA.md) | PostgreSQL / Supabase relational models, SQLAlchemy ORM, Alembic migrations, and FAISS indexing. | Backend & Database Engineers |
+| [**Database & Vector Store Schema**](./DATABASE_SCHEMA.md) | PostgreSQL / Supabase relational models, SQLAlchemy ORM, Alembic migrations, and pgvector indexing. | Backend & Database Engineers |
 | [**Docker & Infrastructure**](./DOCKER_AND_INFRA.md) | Container architecture, multi-container Docker Compose, live development volumes, and CI/CD ready specs. | DevOps & Infrastructure |
 | [**Frontend Guide**](./FRONTEND_GUIDE.md) | React 18, Vite, TypeScript, Tailwind CSS v4, responsive layout (Desktop + Mobile drawer), and Apollo/Supabase integration. | Frontend Developers |
 | [**Development Roadmap**](./ROADMAP.md) | Implementation matrix, release milestones (v0.1.0 to v1.0.0), and contribution standards. | Project Planners & Contributors |
@@ -39,20 +39,20 @@ Welcome to the official technical documentation for **Vectronyx AI Workbench**. 
                +-----------------------+                   |                   +-----------------------+
                v                                           v                                           v
     +----------------------+                   +----------------------+                    +----------------------+
-    |    Memory System     |                   |    Research Agent    |                    |     Data Analyst     |
+    |     Data Analyst     |                   |    Memory System     |                    |    Research Agent    |
     |----------------------|                   |----------------------|                    |----------------------|
-    | • all-MiniLM-L6-v2   |                   | • LangChain ReAct    |                    | • Pandas & NumPy     |
-    | • FAISS Vector Store |                   | • DuckDuckGo Search  |                    | • Scikit-learn (ML)  |
-    | • Supabase / PG Base |                   | • Trafilatura / BS4  |                    | • Matplotlib/Seaborn |
-    | • Semantic Recall    |                   | • Groq / LLaMA 3.3   |                    | • Chart Generation   |
+    | • Supabase Storage   |                   | • Supabase pgvector  |                    | • LangChain ReAct    |
+    | • In-Memory Pandas   |                   | • Cosine Similarity  |                    | • DuckDuckGo Search  |
+    | • Isolation Forest   |                   | • Schema Recall      |                    | • Trafilatura / BS4  |
+    | • Dynamic Dashboard  |                   | • Hybrid SQL Queries |                    | • Gemini / Groq LPUs |
     +----------------------+                   +----------------------+                    +----------------------+
                |                                           |                                           |
                +-------------------------------------------+-------------------------------------------+
                                                            |
                                                            v
                                   +-------------------------------------------------+
-                                  |       PostgreSQL / Supabase + File Storage      |
-                                  |   Tables: users, memories, query_logs, FAISS    |
+                                  |       Supabase Cloud Infrastructure             |
+                                  |   PostgreSQL (pgvector) + Cloud Storage Bucket  |
                                   +-------------------------------------------------+
 ```
 

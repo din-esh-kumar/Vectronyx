@@ -184,7 +184,7 @@ query AnalyzeQuery($datasetId: String!, $query: String!) {
 ### 3.2 Mutations
 
 #### `createMemory`
-Ingests a new text memory, generates its 384d embedding, and stores it in FAISS and PostgreSQL.
+Ingests a new text memory or dataset schema note, generates its dense embedding, and stores it in Supabase `pgvector` and PostgreSQL.
 
 ```graphql
 mutation CreateMemory($content: String!) {

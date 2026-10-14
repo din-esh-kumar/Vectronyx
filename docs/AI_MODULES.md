@@ -10,13 +10,14 @@ The Memory System provides long-term recall, enabling Vectronyx to remember user
 
 ```mermaid
 flowchart LR
-    Text[Input Fact / Note] --> Embedder[SentenceTransformer\nall-MiniLM-L6-v2]
-    Embedder -->|384d Dense Vector| FAISS[FAISS IndexFlatL2]
-    Embedder -->|Vector String| PG[(Supabase memories)]
+    Text[Input Fact / Dataset Schema] --> Embedder[Embedder Engine\nGoogle / MiniLM]
+    Embedder -->|768d/384d Dense Vector| PGVector[Supabase pgvector]
+    Embedder -->|Relational Record| PG[(Supabase memories)]
     
-    Query[User Query] --> QEmbed[SentenceTransformer]
-    QEmbed -->|Query Vector| Search[FAISS k-NN Search]
-    Search -->|Top-K Vector IDs| Fetch[Fetch Records]
+    Query[User Query] --> QEmbed[Embedder Engine]
+    QEmbed -->|Query Vector| Search[Cosine Distance Search <=>]
+    Search -->|Top-K Records| PGVector
+    PGVector --> Fetch[Fetch Context]
     PG --> Fetch
     Fetch --> Context[Injected LLM Context]
 ```
@@ -25,27 +26,29 @@ flowchart LR
 
 | Component | File Path | Technology | Responsibility |
 | :--- | :--- | :--- | :--- |
-| **Embedder** | `modules/memory/embedder.py` | `sentence-transformers` | Converts raw text into normalized 384-dimensional dense vectors. |
-| **Memory Store** | `modules/memory/memory_store.py` | `faiss-cpu`, `numpy` | Manages local FAISS index (`IndexFlatL2` or `IndexIDMap`), persistence, and nearest-neighbor vector queries. |
-| **Relational Sync** | `db/repositories/memory_repo.py` | `SQLAlchemy`, Supabase | Persists user IDs, text content, timestamps, and embedding arrays in PostgreSQL. |
+| **Embedder** | `modules/memory/embedder.py` | Google / Sentence-Transformers | Converts raw text and schema tokens into normalized dense vectors. |
+| **Memory Store** | `modules/memory/memory_store.py` | `pgvector`, `SQLAlchemy` | Executes cosine similarity searches (`<=>`) directly within PostgreSQL. |
+| **Relational Sync** | `db/repositories/memory_repo.py` | `SQLAlchemy`, Supabase | Persists user IDs, text content, timestamps, and vector embeddings in PostgreSQL. |
 | **Schemas** | `modules/memory/schemas.py` | `pydantic` | Defines Pydantic validation contracts for memory creation, search filters, and results. |
 
 ### 1.2 Memory Lifecycle
 
 1. **Ingestion & Indexing**:
-   - The user or agent emits a memory string: `"User prefers concise summaries in bullet points"`.
-   - The `MemoryEmbedder` generates a 384-dimensional float vector:
+   - The user or agent emits a memory or schema note: `"Column 'churn' indicates 30-day user inactivity"`.
+   - The embedder generates a dense vector:
      ```python
-     embedding = model.encode(text).tolist()
+     embedding = get_embedding(text)
      ```
-   - The vector is indexed into FAISS (`index.add(vector)`), and the index is serialized to `vector_store/index.faiss`.
-   - The text and vector are saved to the `memories` table in PostgreSQL.
+   - The vector is inserted directly into the PostgreSQL table using `pgvector`:
+     ```sql
+     INSERT INTO memories (user_id, content, embedding) VALUES (:user_id, :content, :embedding);
+     ```
 
 2. **Semantic Search & Retrieval**:
-   - Given a query: `"How should I format this response?"`
-   - The query is embedded, and FAISS returns the $K$ closest vectors by Euclidean distance:
-     ```python
-     distances, indices = faiss_index.search(query_vector, k=3)
+   - Given a query: `"What does the churn column mean?"`
+   - The query vector is matched against stored memories using native cosine distance:
+     ```sql
+     SELECT content FROM memories ORDER BY embedding <=> :query_vector LIMIT 3;
      ```
    - Matched memory items are retrieved and formatted as system context for the LLM prompt.
 
@@ -67,7 +70,7 @@ flowchart TD
         Scraper -->|Article Markdown| Planner
     end
     
-    ToolChoice -->|All Info Gathered| Synthesizer[Groq / LLaMA 3.3 Engine]
+    ToolChoice -->|All Info Gathered| Synthesizer[Gemini / Groq Engine]
     Synthesizer --> FinalReport[Markdown Report with Citations]
 ```
 
@@ -94,12 +97,13 @@ The Data Analyst engine enables users to upload tabular data (CSV, TSV, JSON) an
 
 ```mermaid
 flowchart TD
-    CSV[CSV / Tabular Upload] --> Ingestion[Pandas Ingestion & Type Infer]
-    Ingestion --> Profiler[Data Profiler\nSummary Stats & Missingness]
-    Ingestion --> Anomaly[Scikit-learn\nIsolation Forest Anomaly Check]
+    Upload[User Drops CSV Dataset] --> SupaStorage[Supabase Storage 'datasets' Bucket]
+    SupaStorage --> Ingestion[In-Memory Stream to Pandas DataFrame]
+    Ingestion --> Profiler[Data Profiler\nSummary Stats & Data Types]
+    Ingestion --> Anomaly[Scikit-Learn\nIsolation Forest Anomaly Check]
     
-    NLPQuery[User Natural Language Query] --> CodeGen[LLM Python/Pandas Generator]
-    CodeGen --> Exec[Sandboxed Data Execution]
+    NLPQuery[User Natural Language Query] --> CodeGen[Gemini 1M Context Engine]
+    CodeGen --> Exec[In-Memory Data Execution]
     Exec --> Chart[Matplotlib / Seaborn Visualizer]
     Exec --> StatOutput[Statistical Data Table]
     Chart --> Base64[Base64 PNG Image / Recharts Payload]
@@ -109,28 +113,26 @@ flowchart TD
 
 | Component | File Path | Technology | Responsibility |
 | :--- | :--- | :--- | :--- |
+| **Cloud Ingestion** | `modules/data_analyst/analyst.py` | `supabase`, `pandas` | Downloads dataset streams from Supabase Storage directly into memory (zero local disk persistence). |
 | **Analyst Core** | `modules/data_analyst/analyst.py` | `pandas`, `scipy` | Performs schema profiling, quantile calculations, correlation matrices, and filtering. |
-| **Anomaly Detector** | `modules/data_analyst/analyst.py` | `scikit-learn` | Runs unsupervised `IsolationForest` to flag multivariate outliers. |
+| **Anomaly Detector** | `modules/data_analyst/analyst.py` | `scikit-learn` | Runs unsupervised `IsolationForest` to isolate multivariate outliers. |
 | **Visualizer** | `modules/data_analyst/analyst.py` | `matplotlib`, `seaborn` | Plots histograms, scatter matrices, and heatmaps; converts figures to base64 images. |
 | **Prompt Engine** | `modules/data_analyst/prompts.py` | Template strings | Generates executable Pandas transformations from user questions. |
 | **Schemas** | `modules/data_analyst/schemas.py` | `pydantic` | Structured types for column metrics, charts, anomaly scores, and dataset summaries. |
 
 ---
 
-## 4. LLM & Inference Architecture
+## 4. Cloud LLM & Inference Architecture
 
-Vectronyx supports dynamic provider switching between cloud-accelerated inference and local, private execution:
+Vectronyx utilizes a 100% cloud-native inference architecture combining massive context reasoning with sub-second LPU speed:
 
-### 4.1 Groq Cloud Provider (`groq`, `langchain-groq`)
-- **Default Model**: `llama-3.3-70b-versatile`
-- **Strengths**: Near-instantaneous response generation (~200-300 tokens/sec), zero GPU load on local machine, optimal for complex ReAct agent loops.
+### 4.1 Google Gemini Provider (`google-genai`)
+- **Active Model**: `gemini-3.5-flash-lite` (or `gemini-3.8-flash`)
+- **Strengths**: 1,000,000 token context window, deep data reasoning, schema ingestion, and structured Python code generation.
+- **Configuration**: Set `LLM_PROVIDER=gemini` and supply `GEMINI_API_KEY`.
+
+### 4.2 Groq Cloud Provider (`groq`, `langchain-groq`)
+- **Active Model**: `openai/gpt-oss-120b` (or `qwen/qwen3.8-27b`)
+- **Strengths**: Near-instantaneous response generation (~250 tokens/sec) on specialized LPUs, ideal for natural language Q&A and fast tool iterations.
 - **Configuration**: Set `LLM_PROVIDER=groq` and supply `GROQ_API_KEY`.
 
-### 4.2 Ollama Local Provider (`ollama`)
-- **Default Model**: `llama3:latest` (or `llama3.3`)
-- **Strengths**: 100% offline, zero data leaves local network, free of API costs and rate limits.
-- **Configuration**: Set `LLM_PROVIDER=ollama` and set `OLLAMA_BASE_URL=http://localhost:11434`.
-- **Command to pull model**:
-  ```bash
-  ollama run llama3
-  ```

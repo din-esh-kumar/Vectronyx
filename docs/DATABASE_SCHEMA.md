@@ -8,8 +8,10 @@ This document details the relational PostgreSQL schema, SQLAlchemy models, Alemb
 
 ```mermaid
 erDiagram
+    USERS ||--o{ DATASETS : uploads
     USERS ||--o{ MEMORIES : owns
     USERS ||--o{ QUERY_LOGS : triggers
+    DATASETS ||--o{ DATASET_COLUMNS : contains
 
     USERS {
         int id PK
@@ -19,11 +21,24 @@ erDiagram
         timestamp created_at
     }
 
+    DATASETS {
+        uuid id PK
+        int user_id FK
+        string filename
+        string storage_path "Supabase Storage URI"
+        int row_count
+        int column_count
+        jsonb summary_stats
+        jsonb anomaly_report
+        timestamp created_at
+    }
+
     MEMORIES {
         int id PK
         int user_id FK
+        uuid dataset_id FK "Optional reference"
         text content
-        text embedding "JSON 384d float array"
+        vector embedding "pgvector 768d / 384d"
         timestamp created_at
     }
 
@@ -57,8 +72,29 @@ Stores registered platform accounts, profiles, and authentication links.
 
 ---
 
-### 2.2 `memories` Table
-Stores raw text chunks, memory metadata, and relational links to users.
+### 2.2 `datasets` Table
+Tracks uploaded tabular datasets stored in Supabase Cloud Storage.
+
+- **Schema**: `public`
+- **Table Name**: `datasets`
+- **Model File**: `backend/app/db/models/dataset.py`
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY`, `DEFAULT gen_random_uuid()` | Unique dataset identifier. |
+| `user_id` | `INTEGER` | `FOREIGN KEY (users.id)` | Owner of the dataset. |
+| `filename` | `VARCHAR(255)` | `NOT NULL` | Original uploaded file name. |
+| `storage_path` | `VARCHAR(500)` | `NOT NULL` | Storage bucket object key in Supabase Storage (`datasets/...`). |
+| `row_count` | `INTEGER` | `DEFAULT 0` | Total number of parsed rows. |
+| `column_count` | `INTEGER` | `DEFAULT 0` | Total number of parsed columns. |
+| `summary_stats` | `JSONB` | `DEFAULT '{}'` | Output of automated Pandas statistical profiling. |
+| `anomaly_report` | `JSONB` | `DEFAULT '{}'` | Outlier detection metrics from Isolation Forest. |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Ingestion timestamp. |
+
+---
+
+### 2.3 `memories` Table (`pgvector` Augmented)
+Stores text statements, dataset schemas, analytical takeaways, and their vector embeddings.
 
 - **Schema**: `public`
 - **Table Name**: `memories`
@@ -68,13 +104,14 @@ Stores raw text chunks, memory metadata, and relational links to users.
 | :--- | :--- | :--- | :--- |
 | `id` | `INTEGER` | `PRIMARY KEY`, Auto-increment | Unique memory identifier. |
 | `user_id` | `INTEGER` | `FOREIGN KEY (users.id)` | Owner of the memory note. |
+| `dataset_id` | `UUID` | `FOREIGN KEY (datasets.id)`, `NULLABLE` | Optional dataset reference binding. |
 | `content` | `TEXT` | `NOT NULL` | Raw memory text / statement. |
-| `embedding` | `TEXT` | `NULLABLE` | Serialized JSON string of the 384-dimensional vector. |
+| `embedding` | `VECTOR(768)` | `NULLABLE` | Native PostgreSQL vector for cosine distance similarity (`<=>`). |
 | `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Record creation timestamp. |
 
 ---
 
-### 2.3 `query_logs` Table
+### 2.4 `query_logs` Table
 Maintains an audit trail of user queries, agent prompts, and generated responses.
 
 - **Schema**: `public`
@@ -84,31 +121,33 @@ Maintains an audit trail of user queries, agent prompts, and generated responses
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `INTEGER` | `PRIMARY KEY`, Auto-increment | Unique log entry identifier. |
+| `user_id` | `INTEGER` | `FOREIGN KEY (users.id)` | User executing the query. |
 | `query` | `TEXT` | `NOT NULL` | User input query / prompt. |
 | `response` | `TEXT` | `NOT NULL` | Model response or agent synthesis output. |
 | `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Execution timestamp. |
 
 ---
 
-## 3. FAISS Vector Store Architecture
+## 3. Supabase Cloud Storage & `pgvector` Architecture
 
-While PostgreSQL holds relational and textual records, vector similarity search is offloaded to a high-performance **FAISS (Facebook AI Similarity Search)** index.
+Instead of local binary `.index` files on disk, Vectronyx operates 100% in the cloud:
 
 ```
-vector_store/
-├── index.faiss    # Native binary representation of the FAISS vector index
-└── index.pkl      # Pickled dictionary mapping FAISS internal IDs to relational Memory IDs
+Supabase Cloud Project
+├── Storage Bucket: 'datasets'  ──► Stores raw CSVs; streamed to Pandas in-memory
+└── PostgreSQL with pgvector    ──► Native vector indexing (HNSW / Cosine <=>)
 ```
 
 ### 3.1 Technical Specifications
 
 | Parameter | Specification | Details |
 | :--- | :--- | :--- |
-| **Model** | `all-MiniLM-L6-v2` | Sentence-Transformers architecture. |
-| **Embedding Dimensions** | `384` | Balanced precision and memory footprint. |
-| **Index Algorithm** | `IndexFlatL2` | Exact Euclidean distance search; zero quantization loss. |
-| **Persistence Method** | File serialization | `faiss.write_index()` & `faiss.read_index()`. |
-| **Sync Strategy** | Two-phase commit | Relational record saved first $\to$ Vector added to FAISS and snapshot saved to disk. |
+| **Vector Extension** | `pgvector` | Native PostgreSQL extension enabled via `CREATE EXTENSION IF NOT EXISTS vector;`. |
+| **Vector Dimensions** | `768` (or `384`) | Compatible with Google Gemini embeddings and MiniLM. |
+| **Distance Metric** | Cosine Distance (`<=>`) | Normalized angular similarity for semantic text comparisons. |
+| **Index Type** | `HNSW` (Hierarchical Navigable Small World) | Sub-millisecond approximate nearest-neighbor retrieval. |
+| **Dataset Storage** | Supabase Storage (`datasets`) | Cloud object store with signed URL streaming directly into Pandas. |
+
 
 ---
 

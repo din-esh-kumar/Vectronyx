@@ -47,11 +47,14 @@
 
 ## 🌟 Executive Summary
 
-**Vectronyx AI Workbench** is an enterprise-grade, local-first artificial intelligence workstation engineered for high-throughput, private, and deterministic knowledge workflows. It synthesizes three distinct pillars of modern artificial intelligence into a cohesive user experience:
+**Vectronyx AI Workbench** is an enterprise-grade, cloud-native artificial intelligence workstation engineered for automated tabular data analysis, contextual semantic recall, and autonomous research workflows. Once a user uploads a dataset, Vectronyx thoroughly ingests, profiles, and analyzes it to generate a rich data analysis dashboard with interactive visualizations, anomaly flags, and natural language exploration:
 
-1. **Episodic & Semantic Vector Recall**: Persistent long-term memory indexed in sub-millisecond local vector stores (`faiss-cpu`) backed by normalized embeddings (`all-MiniLM-L6-v2`) and relational Postgres metadata.
-2. **Autonomous ReAct Web Exploration**: Self-directed multi-hop investigation agents combining zero-cost search (DuckDuckGo), noise-free markdown extraction (`trafilatura`), and dual-tier inference (Groq Cloud LPU acceleration with local Ollama offline failover).
-3. **Tabular Mathematical & Anomaly Intelligence**: In-memory analytical data querying running on Pandas and Scikit-learn (`IsolationForest`), producing statistical distributions and automated Matplotlib/Seaborn figures.
+1. **Cloud Dataset Ingestion & Tabular Intelligence**: Streamed directly into memory from **Supabase Storage** (zero disk writing), parsed with Pandas/NumPy, profiled for statistical distributions, and scanned for multidimensional anomalies via Scikit-Learn (`IsolationForest`).
+2. **Episodic & Semantic Vector Memory**: Relational metadata and embeddings stored in **Supabase `pgvector`** (768d / 384d), powering contextual prompt augmentation and dataset question-answering with zero synchronization drift.
+3. **Dual-Cloud High-Performance Inference**:
+   - **Google Gemini** (`gemini-3.5-flash-lite`): Massive 1,000,000 token context window and high reasoning capability for deep data analysis, code generation, and complex synthesis.
+   - **Groq Cloud** (`openai/gpt-oss-120b`): Sub-second token delivery (~250 tok/s) on dedicated LPUs for real-time natural language querying and tool-calling agent loops.
+4. **Autonomous ReAct Web Exploration**: Self-directed multi-hop investigation agents combining zero-cost search (DuckDuckGo), noise-free markdown extraction (`trafilatura`), and dual-tier cloud inference.
 
 ---
 
@@ -75,19 +78,20 @@ flowchart TB
     end
 
     subgraph AgentLayer["Autonomous Intelligence Tier"]
-        Mem["Memory System\n(MiniLM Embedder + FAISS)"]
-        Res["Research Agent\n(LangChain ReAct + Scraper)"]
         Data["Data Analyst\n(Pandas + IsolationForest + Plots)"]
+        Mem["Memory System\n(pgvector Semantic Search)"]
+        Res["Research Agent\n(LangChain ReAct + Scraper)"]
     end
 
-    subgraph InferenceLayer["Dual-Tier Inference Engine"]
-        Groq["Groq Cloud API\n(LLaMA 3.3 70B • ~250 tok/s)"]
-        Ollama["Local Ollama Daemon\n(LLaMA 3 • Offline Fallback)"]
+    subgraph InferenceLayer["Dual-Cloud Inference Engine"]
+        Gemini["Google Gemini\n(gemini-3.5-flash-lite • 1M Context Reasoning)"]
+        Groq["Groq Cloud API\n(openai/gpt-oss-120b • ~250 tok/s LPU)"]
     end
 
-    subgraph StorageLayer["Data & Persistence Tier"]
+    subgraph StorageLayer["Data & Persistence Tier (100% Cloud)"]
         PG[(Supabase PostgreSQL\nusers, memories, query_logs)]
-        FAISSStore[("FAISS Vector Store\nFlatL2 Index in vector_store/")]
+        PGVector[(Supabase pgvector\n768d / 384d Embeddings)]
+        SupaStorage[("Supabase Cloud Storage\n'datasets' Bucket")]
     end
 
     UI --> Router
@@ -103,19 +107,19 @@ flowchart TB
     CORS --> AuthRouter
 
     Strawberry --> Threadpool
+    Threadpool --> Data
     Threadpool --> Mem
     Threadpool --> Res
-    Threadpool --> Data
 
-    Mem --> FAISSStore
+    Data --> SupaStorage
+    Data --> Gemini
+    Data --> Groq
+
+    Mem --> PGVector
     Mem --> PG
 
+    Res --> Gemini
     Res --> Groq
-    Res -.->|Circuit Breaker Fallback| Ollama
-
-    Data --> Groq
-    Data --> Ollama
-    Data --> PG
 ```
 
 ---
@@ -125,46 +129,45 @@ flowchart TB
 Architected with lessons drawn from production-scale distributed systems and high-throughput ML pipelines:
 
 ### 1. Concurrency Segregation (Non-Blocking Event Loop)
-- **Problem**: Python's Global Interpreter Lock (GIL) freezes asynchronous coroutines when CPU-bound calculations (e.g., Sentence-Transformer vector encoding or FAISS distance computations) execute directly in `async def` routes.
-- **Architectural Solution**: Vectronyx strictly segregates I/O-bound coroutines (`httpx`, `asyncpg`, Supabase REST calls) from CPU-bound computation by delegating tensor generation and analytical profiling to worker threadpools (`anyio.to_thread.run_sync`).
+- **Problem**: Python's Global Interpreter Lock (GIL) freezes asynchronous coroutines when CPU-bound calculations (e.g., Pandas statistical profiling, Isolation Forest tree traversals, embedding generations) execute directly in `async def` routes.
+- **Architectural Solution**: Vectronyx strictly segregates I/O-bound coroutines (`httpx`, `asyncpg`, Supabase REST calls) from CPU-bound computation by delegating analytical profiling and tensor math to worker threadpools (`anyio.to_thread.run_sync`).
 
-### 2. Information Retrieval (IR) Vector Mathematics
-- **Embedding Space**: Continuous vector space $\mathbb{R}^{384}$ using `all-MiniLM-L6-v2`.
-- **Metric Formulation**: With $L_2$-normalized embeddings ($\|\mathbf{u}\|_2 = \|\mathbf{v}\|_2 = 1$), Euclidean distance and Cosine similarity are monotonically linked:
-  $$D_{L2}^2(\mathbf{u}, \mathbf{v}) = 2 - 2 \cdot \cos(\theta)$$
-- **Index Selection**: Vectronyx utilizes `IndexFlatL2` for datasets up to 500,000 vectors, ensuring **100% exact recall** without quantization distortion.
-- **Memory Consumption**: Strictly $N \times 384 \times 4 \text{ bytes} \approx 1.53 \text{ KB}$ per vector ($10,000$ memories consume merely $\approx 15.3 \text{ MB}$ of RAM).
+### 2. Cloud Vector Storage & Hybrid Retrieval (`pgvector`)
+- **Cloud Architecture**: Replaced local binary FAISS files with **Supabase `pgvector`** to ensure 100% cloud-native persistence without local filesystem state.
+- **Hybrid Retrieval**: Combines cosine distance vector similarity (`<=>`) with PostgreSQL relational filters (`user_id`, `dataset_id`) in a single ACID transaction.
+- **Zero Local Footprint**: No multi-gigabyte models required on host RAM during cold-starts; embeddings are indexed directly in PostgreSQL.
 
 ### 3. Agentic Halting Bounds & Circuit Breakers
-- **Problem**: Autonomous ReAct agents risk infinite looping and runaway token consumption on ambiguous or adversarial web prompts.
+- **Problem**: Autonomous ReAct agents risk infinite looping and runaway token consumption on ambiguous or adversarial data queries.
 - **Architectural Solution**: Enforces a strict triple halting boundary:
   1. Maximum step count limiter ($N \le 6$ tool iterations).
   2. Cumulative token budget ceiling ($32,000$ tokens per session).
   3. Action deduping cache: Hashes tool invocations (`hash(tool + args)`) to detect and abort cyclical queries.
 
-### 4. Dual-Inference Resilience Pattern
-- **Primary**: Cloud-accelerated Groq Cloud inference (LLaMA 3.3 70B Versatile) for sub-second agent reasoning.
-- **Failover**: Automated circuit breaker fallback to internal Ollama daemon (`http://localhost:11434`) on HTTP 429 (rate-limit) or upstream 5xx outages, guaranteeing zero downtime.
+### 4. Dual-Cloud Inference Resilience Pattern
+- **Deep Reasoning & Ingestion**: Google Gemini (`gemini-3.5-flash-lite`) provides a 1M token context window to digest large dataset samples, profiling reports, and multi-turn conversations.
+- **Ultra-Fast Interaction**: Groq Cloud (`openai/gpt-oss-120b`) provides ~250 tokens/second sub-second delivery for conversational data queries and quick insights.
+- **Automatic Failover**: Cloud circuit breaker routes traffic automatically if rate-limits or transient provider errors occur.
 
 ---
 
 ## 🚀 Core AI Engines
 
-### 1. Contextual Memory System
-- **Dense Vector Encoding**: Text snippets are embedded into 384-dimensional dense vectors.
-- **Hybrid Retrieval**: Pairs FAISS semantic nearest-neighbor search with PostgreSQL relational filtering and temporal recency decay scoring.
+### 1. Intelligent Data Analyst
+- **Cloud Ingestion**: Ingests datasets from Supabase Storage (`datasets` bucket) directly into memory streams without local disk persistence.
+- **Unsupervised Anomaly Detection**: Employs Scikit-learn's `IsolationForest` to isolate multi-dimensional outliers mathematically via path length scoring:
+  $$s(x, n) = 2^{-\frac{\mathbb{E}(h(x))}{c(n)}}$$
+- **Automated Visualization**: Generates distribution plots, correlation heatmaps, and trend charts via Matplotlib and Seaborn, streaming base64 images directly to the client UI.
+
+### 2. Contextual Memory System
+- **Dense Vector Encoding**: Text snippets, dataset schemas, and generated analytical insights are embedded into vector space.
+- **Hybrid Retrieval**: Pairs Supabase `pgvector` nearest-neighbor search with PostgreSQL relational filtering and temporal recency decay scoring.
 - **Context Injection**: Automatically surfaces the top-$K$ most contextually relevant memories into active agent prompts.
 
-### 2. Autonomous Research Agent
+### 3. Autonomous Research Agent
 - **ReAct Execution Engine**: Dispatches autonomous thoughts, actions, and observations using `langchain`.
 - **Zero-Cost Web Discovery**: Queries DuckDuckGo for live global web findings without commercial search API fees.
 - **Noise-Free Content Scraping**: Strips cookie banners, tracking scripts, and HTML chrome using `trafilatura` and `beautifulsoup4` with `lxml`, feeding clean markdown directly to the reasoning engine.
-
-### 3. Intelligent Data Analyst
-- **Tabular Ingestion**: Parses CSV, TSV, and JSON formats into optimized Pandas DataFrames.
-- **Unsupervised Anomaly Detection**: Employs Scikit-learn's `IsolationForest` to isolate multi-dimensional outliers mathematically via path length scoring:
-  $$s(x, n) = 2^{-\frac{\mathbb{E}(h(x))}{c(n)}}$$
-- **Automated Visualization**: Generates distribution plots, correlation heatmaps, and scatter plots via Matplotlib and Seaborn, streaming base64 images directly to the client UI.
 
 ---
 
@@ -177,10 +180,10 @@ Architected with lessons drawn from production-scale distributed systems and hig
 | **Frontend** | Data Fetching | Apollo Client 4 + Supabase JS | Typed GraphQL in-memory cache + persistent client auth sessions. |
 | **Backend** | API Engine | FastAPI 0.115 + Uvicorn 0.30 | High-performance ASGI framework with Pydantic v2 data validation. |
 | **Backend** | GraphQL Engine | Strawberry GraphQL | Code-first typed Python GraphQL with native FastAPI dependency injection. |
-| **AI / LLM** | Cloud Engine | Groq Cloud (`groq`, `langchain-groq`) | Sub-second token delivery on LLaMA 3.3 70B for agentic loops. |
-| **AI / LLM** | Local Engine | Ollama Client (`ollama`) | Air-gapped, offline fallback inference with zero API billing. |
-| **Embeddings** | Embedder | Sentence-Transformers (`all-MiniLM-L6-v2`) | Balanced 384d semantic fidelity with minimal CPU encoding latency. |
-| **Vector DB**| Similarity Search | FAISS CPU (`faiss-cpu`) | Exact $L_2$ distance nearest-neighbor queries without external network overhead. |
+| **AI / LLM** | Deep Reasoning | Google Gemini (`google-genai`) | 1M token context window, deep data reasoning, and structured code generation. |
+| **AI / LLM** | Fast LPU Chat | Groq Cloud (`groq`, `langchain-groq`) | Sub-second token delivery (~250 tok/s) on `openai/gpt-oss-120b`. |
+| **Vector DB**| Cloud Vectors | Supabase `pgvector` | Native PostgreSQL vector similarity search, ACID compliant, zero local disk files. |
+| **Cloud Storage**| Dataset Store | Supabase Storage (`datasets` bucket) | 1GB free cloud file storage, signed URLs, direct in-memory streaming. |
 | **Database** | Relational Store | PostgreSQL (Supabase) + SQLAlchemy 2.0 | ACID compliance, declarative models, Alembic migration tracking. |
 | **Containers**| Orchestration | Docker + Docker Compose | Isolated multi-service environment with host volume mounts for live dev. |
 

@@ -67,26 +67,27 @@ PORT=8000
 DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
 SUPABASE_URL=https://[YOUR-PROJECT-REF].supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+SUPABASE_KEY=your_supabase_service_role_key_here
 SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_anon_key_here
+
+# Supabase Cloud Storage & pgvector
+SUPABASE_STORAGE_BUCKET=datasets
+VECTOR_STORE_PROVIDER=supabase_pgvector
+VECTOR_DIMENSION=768
 
 # JWT Security
 SECRET_KEY=your_super_secret_jwt_key_change_this_in_production
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# LLM Inference Providers
-LLM_PROVIDER=groq
+# Cloud LLM — Google Gemini (Primary for Reasoning & 1M Context)
+GEMINI_API_KEY=your_free_google_ai_studio_key_here
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# Cloud LLM — Groq Cloud (Ultra-Fast LPU Chat & Tool Calling)
+LLM_PROVIDER=gemini
 GROQ_API_KEY=gsk_your_groq_api_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
-
-# Local Ollama Fallback (optional)
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
-
-# Vector Store & Embeddings
-VECTOR_STORE_PATH=./vector_store
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-VECTOR_DIMENSION=384
+GROQ_MODEL=openai/gpt-oss-120b
 
 # Research Agent Parameters
 MAX_SEARCH_RESULTS=5

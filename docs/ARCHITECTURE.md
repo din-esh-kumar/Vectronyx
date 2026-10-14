@@ -25,20 +25,20 @@ flowchart TB
     end
 
     subgraph AIEngines["Core AI Engines"]
-        MemEngine["Memory System\n(Context Recall)"]
+        DataEngine["Data Analyst\n(Pandas / IsolationForest / Charts)"]
+        MemEngine["Memory System\n(pgvector Semantic Search)"]
         ResEngine["Research Agent\n(ReAct Orchestration)"]
-        DataEngine["Data Analyst\n(Pandas / Scikit / Charts)"]
     end
 
-    subgraph InferenceLayer["Inference Layer"]
-        Groq["Groq Cloud API\n(LLaMA 3.3 70B Versatile)"]
-        Ollama["Local Ollama\n(LLaMA 3 Local Daemon)"]
-        Embedder["SentenceTransformers\n(all-MiniLM-L6-v2)"]
+    subgraph InferenceLayer["Dual-Cloud Inference Engine"]
+        Gemini["Google Gemini\n(gemini-3.5-flash-lite • 1M Context)"]
+        Groq["Groq Cloud API\n(openai/gpt-oss-120b • Fast LPU)"]
     end
 
-    subgraph StorageLayer["Data & Persistence"]
-        FAISS["FAISS Vector Store\n(./vector_store index)"]
-        Postgres["PostgreSQL / Supabase\n(users, memories, query_logs)"]
+    subgraph StorageLayer["Data & Persistence (100% Cloud)"]
+        SupaStorage["Supabase Cloud Storage\n('datasets' Bucket for CSVs)"]
+        PGVector["Supabase pgvector\n(Vector Semantic Search)"]
+        Postgres["PostgreSQL Database\n(users, datasets, query_logs)"]
     end
 
     UI --> Router
@@ -52,21 +52,21 @@ flowchart TB
     CORS --> GraphQLRouter
     CORS --> AuthRouter
 
+    GraphQLRouter --> DataEngine
     GraphQLRouter --> MemEngine
     GraphQLRouter --> ResEngine
-    GraphQLRouter --> DataEngine
 
-    MemEngine --> Embedder
-    MemEngine --> FAISS
+    DataEngine --> SupaStorage
+    DataEngine --> Gemini
+    DataEngine --> Groq
+    DataEngine --> Postgres
+
+    MemEngine --> PGVector
     MemEngine --> Postgres
 
+    ResEngine --> Gemini
     ResEngine --> Groq
-    ResEngine --> Ollama
     ResEngine -->|Web Scraping| DDG[DuckDuckGo + Trafilatura]
-
-    DataEngine --> Groq
-    DataEngine --> Ollama
-    DataEngine --> Postgres
 ```
 
 ---
@@ -94,70 +94,68 @@ flowchart TB
 ### 2.3 Intelligence & Agent Layer (`backend/app/modules/`)
 The intelligence tier hosts three decoupled specialized engines:
 
-#### 1. Contextual Memory System (`backend/app/modules/memory/`)
-- **Purpose**: Gives the LLM long-term conversational memory and contextual awareness across sessions.
+#### 1. Intelligent Data Analyst (`backend/app/modules/data_analyst/`)
+- **Purpose**: Converts raw uploaded CSV datasets into thorough statistical profiles, multidimensional anomaly scores, and dynamic dashboards.
 - **Mechanism**:
-  - Text inputs are converted into dense 384-dimensional vector embeddings using the `all-MiniLM-L6-v2` model from `sentence-transformers`.
-  - Embeddings are indexed into a local `faiss-cpu` index for sub-millisecond similarity search (L2 distance or cosine similarity).
-  - Raw texts, metadata, and timestamps are synced into the `memories` table in PostgreSQL.
-  - When querying, the top-$K$ most relevant memory vectors are fetched and injected as system context into LLM prompts.
+  - Streams raw files from Supabase Storage (`datasets` bucket) directly into memory streams (`pandas.read_csv()`) with zero disk writing.
+  - Performs unsupervised mathematical outlier detection using Scikit-Learn’s `IsolationForest`.
+  - Generates publication-ready figures using `matplotlib` and `seaborn`, outputting base64 data URIs or chart configurations directly to the frontend.
+  - Translates natural language questions into dynamic statistical summaries (correlations, distributions, metrics).
 
-#### 2. Autonomous Research Agent (`backend/app/modules/research_agent/`)
+#### 2. Contextual Memory System (`backend/app/modules/memory/`)
+- **Purpose**: Gives the LLM long-term conversational memory, dataset schema awareness, and contextual intelligence across sessions.
+- **Mechanism**:
+  - Semantic embeddings are generated and stored in **Supabase `pgvector`** (768d / 384d).
+  - Raw texts, metadata, user bindings, and timestamps are synced into PostgreSQL tables with indexed vector columns.
+  - When querying, nearest-neighbor memory vectors (`<=>` cosine similarity) are fetched and injected as system context into LLM prompts.
+
+#### 3. Autonomous Research Agent (`backend/app/modules/research_agent/`)
 - **Purpose**: Executes deep multi-step reasoning, web exploration, and content synthesis without manual search intervention.
 - **Mechanism**:
   - Implements the **ReAct (Reason + Act)** pattern using `langchain`.
   - Queries `duckduckgo-search` for real-time web results.
   - Employs `trafilatura` and `beautifulsoup4` with `lxml` to strip boilerplate, ads, and navigation chrome, extracting pure article markdown.
-  - Feeds gathered facts into LLaMA 3.3 (via Groq Cloud or Ollama) to synthesize comprehensive, cited research briefings.
-
-#### 3. Intelligent Data Analyst (`backend/app/modules/data_analyst/`)
-- **Purpose**: Converts natural language prompts into tabular data transformations, statistical analyses, anomaly checks, and visual charts.
-- **Mechanism**:
-  - Reads structured files (CSV, TSV, JSON) into `pandas` DataFrames.
-  - Performs anomaly detection using `scikit-learn`'s `IsolationForest` or distribution heuristics.
-  - Generates publication-ready figures using `matplotlib` and `seaborn`, outputting base64 data URIs or image assets directly to the frontend.
-  - Translates user questions into dynamic statistical summaries (e.g., correlations, regressions, skewness).
+  - Feeds gathered facts into Gemini or Groq to synthesize comprehensive, cited research briefings.
 
 ### 2.4 Model & Inference Layer (`backend/app/services/`)
-- **Groq Cloud API**: High-throughput inference for LLaMA 3.3 70B Versatile, providing low token-to-first-token latencies.
-- **Ollama Client**: Local daemon integration (`http://localhost:11434`) for full privacy, offline operation, and zero API costs.
-- **Embedding Provider**: In-process `SentenceTransformer` pipeline utilizing local CPU/GPU acceleration without third-party network dependencies.
+- **Google Gemini API**: Deep reasoning, code generation, and massive 1M token context window (`gemini-3.5-flash-lite`).
+- **Groq Cloud API**: High-throughput LPU inference (`openai/gpt-oss-120b`) providing ~250 tokens/second sub-second delivery for conversational agent loops.
 
-### 2.5 Persistence & Vector Store Layer (`backend/app/db/` & `vector_store/`)
+### 2.5 Persistence & Cloud Storage Layer (`backend/app/db/`)
 - **Relational Storage**: PostgreSQL hosted on Supabase, connected via SQLAlchemy 2.0 and Alembic.
-  - Tables: `users` (credentials and metadata), `memories` (text content, embedding JSON, timestamps), `query_logs` (audit records of user prompts and agent responses).
-- **Vector Storage**: File-based FAISS index (`vector_store/index.faiss` and `vector_store/index.pkl`), enabling persistence across server restarts.
+  - Tables: `users` (credentials and metadata), `datasets` (uploaded metadata, row/col counts, storage paths), `memories` (text content, vector embeddings, timestamps), `query_logs` (audit records).
+- **Cloud File Storage**: Supabase Storage (`datasets` bucket) for raw dataset files with signed URL streaming.
+- **Cloud Vector Store**: Supabase `pgvector` extension for cosine distance index searches.
 
 ---
 
-## 3. Request Lifecycle Diagram
+## 3. Request Lifecycle Diagrams
 
-### 3.1 Research Agent Execution Flow
+### 3.1 AI Data Analyst Ingestion & Profiling Flow
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as User Browser
     participant FE as React Frontend
     participant API as FastAPI / GraphQL
-    participant Agent as Research Agent
-    participant DDG as DuckDuckGo Search
-    participant Scraper as Trafilatura Scraper
-    participant LLM as Groq / LLaMA 3.3
+    participant Storage as Supabase Storage ('datasets')
+    participant Analyst as Data Analyst Engine
+    participant LLM as Google Gemini (1M Context)
+    participant DB as Supabase PostgreSQL
 
-    User->>FE: Submits query: "Latest AI breakthroughs"
-    FE->>API: Execute GraphQL Mutation `startResearch(topic, depth)`
-    API->>Agent: Initialize ReAct Agent with Tools
-    Agent->>DDG: Execute Web Search queries
-    DDG-->>Agent: Raw search result URLs & snippets
-    loop For each top URL
-        Agent->>Scraper: Fetch page content & clean text
-        Scraper-->>Agent: Sanitized markdown article text
-    end
-    Agent->>LLM: Send aggregated sources + prompt for synthesis
-    LLM-->>Agent: Structured markdown research report with citations
-    Agent->>API: Return report payload + source list
-    API-->>FE: GraphQL Response
-    FE-->>User: Renders interactive research briefing
+    User->>FE: Drops CSV dataset (e.g., "sales_q3.csv")
+    FE->>Storage: Uploads file to Supabase Storage bucket
+    Storage-->>FE: File storage path & reference ID
+    FE->>API: Execute GraphQL Mutation `analyzeDataset(storagePath)`
+    API->>Storage: Stream file bytes into memory
+    Storage-->>API: In-memory byte stream
+    API->>Analyst: Parse via Pandas & compute summary statistics
+    Analyst->>Analyst: Run IsolationForest anomaly detection
+    Analyst->>LLM: Ingest schema, metrics & anomalies for synthesis
+    LLM-->>Analyst: Business narrative, key trends & takeaway bullet points
+    Analyst->>DB: Save dataset profile & anomaly metadata
+    Analyst-->>API: Return complete dashboard schema (KPIs, plots, insights)
+    API-->>FE: Render auto-generated interactive dashboard
 ```
 
 ### 3.2 Memory Storage & Recall Flow
@@ -166,31 +164,20 @@ sequenceDiagram
     autonumber
     actor User as User Browser
     participant API as FastAPI Backend
-    participant ST as SentenceTransformers (all-MiniLM-L6-v2)
-    participant FAISS as FAISS Index (vector_store)
+    participant PGVector as Supabase pgvector
     participant DB as Supabase PostgreSQL
 
-    User->>API: Send message: "Remember my project is Vectronyx"
-    API->>ST: Compute dense embedding (384 dimensions)
-    ST-->>API: Vector float array [0.034, -0.12, ...]
-    par Save to Relational DB
-        API->>DB: INSERT INTO memories (user_id, content, embedding)
-    and Index in Vector Store
-        API->>FAISS: Index vector with memory ID
-        API->>FAISS: Write snapshot to disk
-    end
+    User->>API: Send message: "Our primary churn metric is 30-day inactivity"
+    API->>PGVector: Generate embedding & INSERT INTO dataset_memories
+    PGVector-->>API: Vector indexed with relational ID
     API-->>User: Memory stored acknowledgment
 
     Note over User,DB: Later conversation context retrieval...
 
-    User->>API: Query: "What project am I working on?"
-    API->>ST: Compute query embedding
-    ST-->>API: Query vector
-    API->>FAISS: Search nearest neighbors (top K=3)
-    FAISS-->>API: Matched memory IDs & distances
-    API->>DB: Fetch original text for matched IDs
-    DB-->>API: "Remember my project is Vectronyx"
-    API->>API: Inject into LLM system prompt as context
+    User->>API: Query: "What churn threshold do we use?"
+    API->>PGVector: SELECT content FROM dataset_memories ORDER BY embedding <=> query_vector LIMIT 3
+    PGVector-->>API: Matched memory snippets
+    API->>API: Inject into Gemini/Groq prompt as system context
 ```
 
 ---
@@ -200,7 +187,9 @@ sequenceDiagram
 | Decision | Rationale | Alternatives Considered |
 | :--- | :--- | :--- |
 | **Strawberry GraphQL over pure REST** | Strongly typed contract, granular field requests, self-documenting schema explorer at `/graphql`. | Pure REST (overfetching/underfetching), gRPC (poor browser ergonomics). |
-| **Hybrid LLM (Groq + Ollama)** | Combines cloud speed (Groq) with local privacy/offline fallback (Ollama). | Pure OpenAI (high cost, lock-in), Pure Local (requires beefy GPU). |
-| **Local FAISS over Cloud Vector DB** | Zero cost, ultra-low latency, no external network dependencies, simple local backup. | Pinecone (paid tier limits), Supabase pgvector (additional cloud setup needed). |
+| **Dual-Cloud Inference (Gemini + Groq)** | Pairs Gemini’s massive 1M context reasoning with Groq’s sub-second (~250 tok/s) response speed. | Single proprietary provider (vendor lock-in, outage risk). |
+| **Supabase pgvector over Local Files** | 100% cloud-native persistence, relational joins (`WHERE user_id = ...`), zero local `.index` files to manage. | Local FAISS files (cannot scale to multi-instance cloud deployments). |
+| **Supabase Storage for CSV Ingestion** | 1GB free cloud storage, signed access tokens, direct in-memory streaming into Pandas without local disk I/O. | Local disk storage (stateful, ephemeral in containers), AWS S3 (requires extra credentials). |
 | **Tailwind CSS v4 + Vite** | Instant HMR, zero runtime overhead, modern CSS variables, clean responsive utilities. | Emotion/Styled-components (runtime penalty), Tailwind v3 (heavier config). |
 | **Supabase Client + Python Backend** | Offloads client auth state handling, OAuth redirects, and session renewal while maintaining full backend data ownership. | Custom JWT auth from scratch (high maintenance, security risks). |
+

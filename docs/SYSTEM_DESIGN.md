@@ -10,12 +10,12 @@
 
 Vectronyx is architected around six non-negotiable engineering principles designed to balance **autonomous intelligence**, **deterministic reliability**, **low latency**, and **strict privacy governance**:
 
-1. **Local-First, Cloud-Accelerated**: Data sovereignty remains prioritized. Sensitive vector embeddings and user contexts can reside fully in local indices (FAISS) or private PostgreSQL instances, while offloading burst-intensive reasoning to dedicated ultra-low-latency tensor engines (Groq LPUs).
-2. **Explicit Concurrency Segregation**: Asynchronous I/O workloads (HTTP endpoints, database queries, web scraping, streaming GraphQL subscriptions) must never block on CPU-bound machine learning tasks (Sentence-Transformers encoding, FAISS distance calculations, Pandas statistical transformations).
+1. **Cloud-First, High-Performance Architecture**: Data pipelines and high throughput are prioritized. Datasets are securely streamed in-memory from Supabase Cloud Storage (`datasets`), while semantic vectors reside natively in Supabase `pgvector` for zero-maintenance cloud scale.
+2. **Explicit Concurrency Segregation**: Asynchronous I/O workloads (HTTP endpoints, database queries, web scraping, streaming GraphQL subscriptions) must never block on CPU-bound machine learning tasks (Isolation Forest outlier detection, Pandas statistical transformations, embedding calculations).
 3. **Defense-in-Depth for Agentic Systems**: Autonomous tool-calling agents are treated as untrusted runtime actors. Web scrapers, code execution sandboxes, and file parsers are ring-fenced with timeouts, memory limits, SSRF filters, and parameter coercion.
 4. **Idempotency & Determinism**: Non-deterministic LLM outputs are normalized through strict Pydantic v2 schemas and validation layers before entering downstream storage or analytical pipelines.
 5. **Zero-Trust Network Perimeter**: Client frontend code is never granted direct administrative database access. Public clients interact through authenticated sessions (Supabase Auth anon keys with RLS), while the backend enforces service-role authorization.
-6. **Graceful Degradation**: Infrastructure failures (e.g., cloud LLM rate limits, network outages) trigger automated, deterministic fallbacks (e.g., routing traffic from Groq to a local Ollama daemon without crashing client sessions).
+6. **Graceful Degradation**: Infrastructure failures (e.g., cloud LLM rate limits, network outages) trigger automated, deterministic fallbacks (e.g., routing traffic dynamically between Google Gemini and Groq Cloud without crashing client sessions).
 
 ---
 
@@ -204,24 +204,24 @@ To identify anomalous rows without prior training labels, the engine runs an uns
 
 ---
 
-## 7. Disaster Recovery & Fallback Topologies
+## 7. Disaster Recovery & Dual-Cloud Fallback Topologies
 
 ```mermaid
 flowchart TD
-    Req[LLM Inference Request] --> CheckCloud{Is Groq Cloud Available?}
+    Req[LLM Inference Request] --> CheckGemini{Is Google Gemini Available?}
     
-    CheckCloud -->|Yes\nLatency ~200ms| GroqExec[Execute via Groq Cloud\nLLaMA 3.3 70B]
-    CheckCloud -->|Rate Limit / 5xx Error| FallbackOllama[Circuit Breaker Trips\nRoute to Local Daemon]
+    CheckGemini -->|Yes\n1M Context Reasoning| GeminiExec[Execute via Google Gemini\ngemini-3.5-flash-lite]
+    CheckGemini -->|Spike / 503 / 429 Error| FallbackGroq[Circuit Breaker Trips\nRoute to Groq Cloud]
     
-    FallbackOllama --> OllamaExec[Execute via Local Ollama\nLLaMA 3 Local Container]
+    FallbackGroq --> GroqExec[Execute via Groq Cloud\nopenai/gpt-oss-120b LPU]
     
-    GroqExec --> Success[Return Response]
-    OllamaExec --> Success
+    GeminiExec --> Success[Return Response]
+    GroqExec --> Success
 ```
 
-Vectronyx uses a **Tenacity circuit breaker** on all LLM calls:
-1. **Primary**: Groq Cloud API (`llama-3.3-70b-versatile`) with exponential backoff on HTTP 429 (Rate Limit).
-2. **Secondary Fallback**: If Groq returns 3 consecutive failures or trips the circuit breaker, traffic switches seamlessly to the internal Ollama daemon (`http://localhost:11434`), guaranteeing unbroken service availability even during cloud provider outages.
+Vectronyx uses a **Tenacity circuit breaker** on all cloud LLM calls:
+1. **Primary Reasoning & Schema Ingestion**: Google Gemini (`gemini-3.5-flash-lite` or `gemini-3.8-flash`) with exponential backoff on transient HTTP 503 / 429 spikes.
+2. **High-Speed LPU Failover**: If Gemini returns transient errors or trips the circuit breaker, traffic switches seamlessly to **Groq Cloud** (`openai/gpt-oss-120b`), guaranteeing sub-second unbroken service availability.
 
 ---
 
@@ -235,13 +235,14 @@ Production deployments require structured telemetry rather than unstructured ter
     "timestamp": "2026-04-14T17:15:22.102Z",
     "level": "INFO",
     "correlation_id": "b3e94a82-f190-4e2a-89a1",
-    "module": "research_agent",
-    "action": "web_search",
-    "query": "vector databases 2026",
-    "duration_ms": 342,
+    "module": "data_analyst",
+    "action": "tabular_profiling",
+    "dataset": "sales_q3.csv",
+    "duration_ms": 182,
     "status": "success"
   }
   ```
 - **Liveness & Readiness Probes**:
   - `/` -> Liveness probe verifying the ASGI worker loop is cycling.
-  - `/graphql?query={healthCheck}` -> Readiness probe confirming FAISS index is loaded in memory and PostgreSQL connection pool is active.
+  - `/graphql?query={healthCheck}` -> Readiness probe confirming Supabase `pgvector` extension and PostgreSQL connection pool are active.
+

@@ -12,8 +12,9 @@ This document outlines the current progress, implementation milestones, and cont
 | **Docker Compose Orchestration** | ✅ Completed | High | Multi-container setup with live volume mounts for rapid dev. |
 | **Frontend Shell & Responsive Layout** | ✅ Completed | High | Collapsible desktop sidebar + mobile slide-over drawer with overlay. |
 | **Supabase Authentication UI** | ✅ Completed | High | Google OAuth, GitHub OAuth, and Email/Password flows. |
-| **Relational Database Schema (SQLAlchemy)** | ✅ Completed | High | `users`, `memories`, and `query_logs` models defined. |
-| **Core AI Engines (Memory, Research, Analyst)** | 🟡 In Progress | Critical | FAISS vector store, ReAct research agent, and tabular analyzer. |
+| **Relational Database Schema (SQLAlchemy)** | ✅ Completed | High | `users`, `datasets`, `memories`, and `query_logs` models defined. |
+| **Cloud Storage & pgvector Integration** | ✅ Completed | Critical | `datasets` bucket configured on Supabase Storage + `pgvector` enabled. |
+| **Core AI Engines (Data Analyst, Memory, Research)** | 🟡 In Progress | Critical | In-memory Pandas profiler, IsolationForest, and ReAct agent. |
 | **Strawberry GraphQL Resolvers** | 🟡 In Progress | Critical | Binding backend AI engines to frontend Apollo Client. |
 | **CSV Tabular Uploader & Visualizer** | ⚪ Planned | Medium | Drag-and-drop CSV parser with interactive Recharts charts. |
 | **Research Report Markdown Renderer** | ⚪ Planned | Medium | Rich markdown synthesis viewer with citations and source pills. |
@@ -30,11 +31,12 @@ This document outlines the current progress, implementation milestones, and cont
 - [x] Supabase integration for authentication and PostgreSQL connection.
 - [x] Desktop and mobile navigation layout with smooth responsive behavior.
 
-### Milestone 2: AI Core Engines & Inference (v0.2.0) — 🟡 Active
-- [ ] Connect `sentence-transformers` (`all-MiniLM-L6-v2`) to FAISS vector index in `backend/app/modules/memory/`.
+### Milestone 2: Cloud AI Engines & Inference (v0.2.0) — 🟡 Active
+- [x] Configure cloud dataset storage in Supabase Storage (`datasets` bucket).
+- [ ] Connect Supabase `pgvector` for semantic dataset memory in `backend/app/modules/memory/`.
+- [ ] Implement in-memory Pandas statistical profiler and Isolation Forest anomaly detector in `backend/app/modules/data_analyst/`.
+- [ ] Enable dual-cloud inference with Google Gemini (`gemini-3.5-flash-lite`, 1M context) and Groq Cloud (`openai/gpt-oss-120b`).
 - [ ] Implement ReAct loop with DuckDuckGo Search and Trafilatura web scraping in `backend/app/modules/research_agent/`.
-- [ ] Implement Pandas/Scikit-learn statistical profiler and Isolation Forest anomaly detector in `backend/app/modules/data_analyst/`.
-- [ ] Enable dual-inference switching between Groq Cloud (LLaMA 3.3) and local Ollama.
 
 ### Milestone 3: GraphQL API Integration (v0.3.0) — ⚪ Planned
 - [ ] Implement Strawberry GraphQL schema in `backend/app/api/schema.py`.
