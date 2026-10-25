@@ -1,0 +1,13 @@
+{
+  "name": "vectronyx-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vectronyx AI Workbench Workspace",
+  "scripts": {
+    "dev": "pnpm --dir frontend run dev",
+    "dev:frontend": "pnpm --dir frontend run dev",
+    "dev:backend": "cd backend && .venv\\Scripts\\uvicorn app.main:app --reload --port 8000",
+    "build": "pnpm --dir frontend run build",
+    "preview": "pnpm --dir frontend run preview"
+  }
+}
