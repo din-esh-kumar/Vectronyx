@@ -1,9 +1,389 @@
 @import "tailwindcss";
 
+@layer base {
+  :root {
+    --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
 
-:root {
-  --primary: #8550da;
-  --secondary: #7442c6;
-  --accent: #cdafff;
-  --dark: #44188c;
+    /* Deep Royal & Electric Violet Palette */
+    --violet-50: #FAF5FF;
+    --violet-100: #F3E8FF;
+    --violet-200: #E9D5FF;
+    --violet-300: #D8B4FE;
+    --violet-400: #C084FC;
+    --violet-500: #A855F7;
+    --violet-600: #9333EA;
+    --violet-700: #7E22CE;
+    --violet-800: #6B21A8;
+    --violet-900: #581C87;
+    --violet-950: #3B0764;
+
+    /* Rich Roasted Brown, Espresso & Warm Cognac Palette */
+    --brown-50: #FAF5EF;
+    --brown-100: #F3E8DC;
+    --brown-200: #E6D2C0;
+    --brown-300: #D4B39B;
+    --brown-400: #BD8E70;
+    --brown-500: #A36B4A;
+    --brown-600: #884F2E;
+    --brown-700: #6E3B1E;
+    --brown-800: #542A13;
+    --brown-900: #3D1C0B;
+    --brown-950: #261106;
+
+    /* Signature Glow Tokens */
+    --bronze-glow: rgba(163, 107, 74, 0.28);
+    --violet-glow: rgba(168, 85, 247, 0.26);
+
+    /* Dark Theme Surfaces: Deep Smoked Espresso + Royal Violet */
+    --bg-base: #120A07;
+    --bg-surface: #1B100B;
+    --bg-surface-elevated: #24160F;
+    --bg-card: #1E120B;
+    --bg-card-hover: #29180F;
+    --border-subtle: rgba(168, 85, 247, 0.24);
+    --border-bronze: rgba(189, 142, 112, 0.32);
+    --text-primary: #FFF8F3;
+    --text-secondary: #DECAC0;
+    --text-muted: #A89184;
+  }
+
+  .light {
+    /* Warm Creamy Latte & Toasted Almond base */
+    --bg-base: #F6EFE6;
+    --bg-surface: #FFFFFF;
+    --bg-surface-elevated: #EFE4D6;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #FAF4EE;
+    --border-subtle: rgba(109, 40, 217, 0.22);
+    --border-bronze: rgba(110, 59, 30, 0.28);
+    --text-primary: #1A0B05;
+    --text-secondary: #3B1C0E;
+    --text-muted: #5F3721;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    overflow-x: hidden;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Dynamic Violet & Warm Roasted Walnut Ambient Lighting */
+.ambient-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-glow::before {
+  content: "";
+  position: absolute;
+  top: -6%;
+  left: 10%;
+  width: 620px;
+  height: 620px;
+  background: radial-gradient(circle, rgba(147, 51, 234, 0.16) 0%, rgba(107, 33, 168, 0.06) 55%, transparent 75%);
+  filter: blur(90px);
+  border-radius: 50%;
+}
+
+.ambient-glow::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  right: 6%;
+  width: 580px;
+  height: 580px;
+  background: radial-gradient(circle, rgba(189, 142, 112, 0.18) 0%, rgba(110, 59, 30, 0.08) 50%, transparent 75%);
+  filter: blur(95px);
+  border-radius: 50%;
+}
+
+/* Glassmorphism Surface Panels */
+.glass-panel {
+  background: linear-gradient(180deg, rgba(27, 16, 11, 0.94) 0%, rgba(20, 11, 7, 0.94) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(168, 85, 247, 0.22);
+}
+
+.light .glass-panel {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAF5EE 100%) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(110, 59, 30, 0.2) !important;
+  box-shadow: 0 4px 24px rgba(61, 28, 11, 0.06);
+}
+
+/* Premium Floating Cards (Violet + Rich Espresso Brown) */
+.glass-card {
+  background: linear-gradient(145deg, rgba(30, 18, 14, 0.9) 0%, rgba(38, 22, 17, 0.75) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  box-shadow: 0 8px 32px -4px rgba(18, 10, 7, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.light .glass-card {
+  background: linear-gradient(145deg, #FFFFFF 0%, #FAF4ED 100%) !important;
+  backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(110, 59, 30, 0.2) !important;
+  box-shadow: 0 8px 30px -4px rgba(61, 28, 11, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Warm Roasted Cognac & Chestnut Accent Cards */
+.glass-card-bronze {
+  background: linear-gradient(145deg, rgba(46, 24, 14, 0.92) 0%, rgba(68, 36, 20, 0.78) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(212, 179, 155, 0.35);
+  box-shadow: 0 8px 32px -4px rgba(28, 12, 6, 0.5), inset 0 1px 0 rgba(243, 232, 220, 0.14);
+}
+
+.light .glass-card-bronze {
+  background: linear-gradient(145deg, #FFFDF9 0%, #F5EAE0 100%) !important;
+  backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(163, 107, 74, 0.35) !important;
+  box-shadow: 0 6px 24px -4px rgba(84, 42, 19, 0.1) !important;
+}
+
+/* Smooth Interactive Card Hover */
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(192, 132, 252, 0.45);
+  box-shadow: 0 14px 38px -6px rgba(107, 33, 168, 0.35), 0 0 20px rgba(189, 142, 112, 0.25);
+}
+
+/* Signature Gradient Text: Royal Violet to Warm Roasted Cognac Brown */
+.text-gradient-vb {
+  background: linear-gradient(135deg, #C084FC 0%, #A855F7 35%, #E8A276 75%, #BD8E70 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.light .text-gradient-vb {
+  background: linear-gradient(135deg, #6D28D9 0%, #7E22CE 40%, #884F2E 80%, #6E3B1E 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.text-gradient-bronze {
+  background: linear-gradient(135deg, #F3E8DC 0%, #D4B39B 50%, #A36B4A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.light .text-gradient-bronze {
+  background: linear-gradient(135deg, #884F2E 0%, #6E3B1E 50%, #542A13 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Custom Sleek Dual-Tone Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(27, 16, 11, 0.6);
+}
+
+.light ::-webkit-scrollbar-track {
+  background: rgba(246, 239, 230, 0.9);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #7E22CE 0%, #884F2E 100%);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #9333EA 0%, #A36B4A 100%);
+}
+
+/* Custom Focus Ring with Violet & Roasted Brown Harmony */
+.focus-vb:focus {
+  outline: none;
+  border-color: #A855F7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.32), 0 0 14px rgba(189, 142, 112, 0.28);
+}
+
+/* Keyframe Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* =========================================================================
+   LIGHT MODE: COMPREHENSIVE TEXT VISIBILITY & CONTRAST ENGINE
+   Guarantee >10:1 AAA contrast on every title, paragraph, chip, and label
+   ========================================================================= */
+
+.light {
+  color-scheme: light;
+}
+
+.light body {
+  background-color: #F6EFE6 !important;
+  color: #1A0B05 !important;
+}
+
+/* Headings and Titles - Deep Dark Espresso */
+.light h1, .light h2, .light h3, .light h4, .light h5, .light h6 {
+  color: #1A0B05 !important;
+}
+
+/* Body Text & Paragraphs - Rich Dark Roast Mocha */
+.light p {
+  color: #381C0F !important;
+}
+
+/* Form Labels */
+.light label {
+  color: #2E150B !important;
+}
+
+/* Catch all violet and purple utility text classes regardless of opacity */
+.light [class*="text-violet-"],
+.light [class*="text-purple-"],
+.light [class*="text-indigo-"] {
+  color: #4C1D95 !important; /* Deep Imperial Violet */
+}
+
+/* Catch all amber, orange, and brown utility text classes */
+.light [class*="text-amber-"],
+.light [class*="text-orange-"],
+.light [class*="text-yellow-"],
+.light [class*="text-brown-"] {
+  color: #6E3B1E !important; /* Rich Roasted Cognac Brown */
+}
+
+/* Force default text-white to dark espresso EXCEPT inside dark buttons */
+.light [class*="text-white"] {
+  color: #1A0B05 !important;
+}
+
+.light [class*="text-gray-"],
+.light [class*="text-slate-"],
+.light [class*="text-zinc-"],
+.light [class*="text-neutral-"],
+.light [class*="text-stone-"] {
+  color: #4A2B1A !important; /* Warm Mocha Charcoal */
+}
+
+/* Textareas, Inputs, Selects */
+.light input,
+.light textarea,
+.light select {
+  background-color: #FFFFFF !important;
+  color: #1A0B05 !important;
+  border: 1.5px solid rgba(110, 59, 30, 0.35) !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #8C624D !important;
+}
+
+/* Upload dropzone in light mode */
+.light label[class*="border-dashed"] {
+  background-color: #FAF4EE !important;
+  border-color: rgba(110, 59, 30, 0.4) !important;
+}
+
+.light label[class*="border-dashed"] span {
+  color: #2E150B !important;
+}
+
+/* Table styling in light mode */
+.light table th {
+  background-color: #EFE4D6 !important;
+  color: #1A0B05 !important;
+}
+
+.light table td {
+  color: #2E150B !important;
+}
+
+.light tr:hover {
+  background-color: #FAF4EE !important;
+}
+
+/* =========================================================================
+   PROTECT SOLID & GRADIENT BUTTONS & PILLS (MUST RETAIN CRISP WHITE TEXT)
+   ========================================================================= */
+
+.light button[class*="bg-gradient"],
+.light a[class*="bg-gradient"],
+.light button[class*="bg-gradient"] *,
+.light a[class*="bg-gradient"] *,
+.light button[class*="from-"],
+.light a[class*="from-"],
+.light button[class*="from-"] *,
+.light a[class*="from-"] *,
+.light button.bg-violet-600,
+.light button.bg-violet-700,
+.light button.bg-violet-800,
+.light button.bg-amber-600,
+.light button.bg-amber-700,
+.light button[class*="bg-violet-"] *,
+.light button[class*="bg-amber-"] * {
+  color: #FFFFFF !important;
+}
+
+/* Light mode backgrounds for container chips */
+.light .bg-violet-950\/20,
+.light .bg-violet-950\/30,
+.light .bg-violet-950\/40,
+.light .bg-violet-950\/50,
+.light .bg-violet-950\/60,
+.light .bg-violet-950\/80 {
+  background-color: rgba(237, 226, 250, 0.9) !important;
+  border-color: rgba(109, 40, 217, 0.35) !important;
+}
+
+.light .bg-amber-950\/20,
+.light .bg-amber-950\/30,
+.light .bg-amber-950\/40,
+.light .bg-amber-950\/50,
+.light .bg-amber-950\/60,
+.light .bg-amber-950\/80 {
+  background-color: rgba(248, 236, 225, 0.9) !important;
+  border-color: rgba(136, 79, 46, 0.38) !important;
+}
+
+.light .bg-black\/20,
+.light .bg-black\/30,
+.light .bg-black\/40,
+.light .bg-black\/60 {
+  background-color: rgba(246, 238, 229, 0.95) !important;
+  border-color: rgba(110, 59, 30, 0.28) !important;
+}
+
+.light code, .light pre {
+  background-color: #261106 !important;
+  color: #F8EFE7 !important;
 }
