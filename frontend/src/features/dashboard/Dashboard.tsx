@@ -9,15 +9,10 @@ import {
   ArrowUpRight,
   Zap,
   Activity,
-  Layers,
-  Search,
-  CheckCircle2,
   AlertTriangle,
   TrendingUp,
-  HardDrive,
   Cpu,
   Clock,
-  Filter
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -144,9 +139,9 @@ export default function Dashboard() {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-violet-950/80 to-amber-950/80 border border-amber-500/30 text-amber-300 text-xs font-mono mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-violet-950/80 to-[#4E2512]/80 border border-[#884F2E]/40 text-[#E8A276] text-xs font-mono mb-3">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>Vectronyx Dual Engine Active • SLA 99.4%</span>
+              <span>Vectronyx Dual Engine Active • Gemini {systemStatus.geminiStatus} • Groq {systemStatus.groqSpeed} tok/s • SLA 99.4%</span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-white font-display">
@@ -162,24 +157,24 @@ export default function Dashboard() {
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
                 onClick={() => navigate("/data-analyst")}
-                className="px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-white bg-gradient-to-r from-violet-600 via-purple-700 to-amber-600 hover:from-violet-500 hover:to-amber-500 shadow-lg shadow-violet-900/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                className="px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] shadow-lg shadow-violet-950/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 border border-[#E8A276]/30"
               >
-                <BarChart3 className="w-4 h-4 text-amber-300" />
+                <BarChart3 className="w-4 h-4 text-[#E8A276]" />
                 <span>Launch Data Analyst</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
 
               <button
                 onClick={() => navigate("/research")}
-                className="px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-violet-200 bg-violet-950/40 hover:bg-violet-900/40 border border-violet-500/25 hover:border-violet-400/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                className="px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-[var(--text-primary)] bg-violet-950/60 hover:bg-violet-900/60 border border-violet-500/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
               >
-                <Sparkles className="w-4 h-4 text-amber-400" />
+                <Sparkles className="w-4 h-4 text-[#E8A276]" />
                 <span>Autonomous Research</span>
               </button>
 
               <button
                 onClick={() => navigate("/memory")}
-                className="px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-violet-200 bg-amber-950/30 hover:bg-amber-900/30 border border-amber-600/20 hover:border-amber-500/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                className="px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm text-[var(--text-primary)] bg-[#3D1C0B]/60 hover:bg-[#542A13]/60 border border-[#884F2E]/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
               >
                 <Database className="w-4 h-4 text-violet-400" />
                 <span>Query pgvector</span>
@@ -202,19 +197,19 @@ export default function Dashboard() {
             <div className="space-y-2 text-xs">
               <div className="flex justify-between items-center text-violet-200/80">
                 <span className="text-violet-300/60 font-mono">Google Gemini:</span>
-                <span className="font-semibold text-white">3.5-Flash (1M ctx)</span>
+                <span className="font-semibold text-white capitalize">{systemStatus.geminiStatus} (1M ctx)</span>
               </div>
               <div className="flex justify-between items-center text-violet-200/80">
                 <span className="text-violet-300/60 font-mono">Groq LPU Speed:</span>
-                <span className="font-semibold text-amber-400 font-mono">248 tok/s</span>
+                <span className="font-semibold text-[#E8A276] font-mono">{systemStatus.groqSpeed} tok/s</span>
               </div>
               <div className="flex justify-between items-center text-violet-200/80">
                 <span className="text-violet-300/60 font-mono">pgvector Store:</span>
-                <span className="font-semibold text-violet-300 font-mono">1,420 Nodes</span>
+                <span className="font-semibold text-violet-300 font-mono">{systemStatus.pgvectorCount.toLocaleString()} Nodes</span>
               </div>
               <div className="flex justify-between items-center text-violet-200/80">
                 <span className="text-violet-300/60 font-mono">Edge Latency:</span>
-                <span className="font-semibold text-emerald-400 font-mono">14 ms</span>
+                <span className="font-semibold text-emerald-400 font-mono">{systemStatus.latencyMs} ms</span>
               </div>
             </div>
           </div>

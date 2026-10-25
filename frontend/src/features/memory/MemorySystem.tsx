@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Database,
   Search,
@@ -165,9 +165,9 @@ export default function MemorySystem() {
 
           <button
             onClick={() => setIsAddOpen(true)}
-            className="px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white bg-gradient-to-r from-violet-600 via-purple-700 to-amber-600 hover:from-violet-500 hover:to-amber-500 shadow-md shadow-violet-900/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95 shrink-0 self-start md:self-auto"
+            className="px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] shadow-md shadow-violet-950/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 shrink-0 self-start md:self-auto border border-[#E8A276]/30"
           >
-            <Plus className="w-4 h-4 text-amber-300" />
+            <Plus className="w-4 h-4 text-[#E8A276]" />
             <span>Ingest New Memory</span>
           </button>
         </div>

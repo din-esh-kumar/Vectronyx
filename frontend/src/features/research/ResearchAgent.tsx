@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Sparkles,
   Search,
@@ -332,16 +332,16 @@ An exhaustive multi-hop investigation was completed. The findings substantiate h
             <button
               onClick={() => handleLaunchResearch()}
               disabled={isSearching}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-violet-600 via-purple-700 to-amber-600 hover:from-violet-500 hover:to-amber-500 shadow-md shadow-violet-900/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] shadow-md shadow-violet-950/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 border border-[#E8A276]/30"
             >
               {isSearching ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
                   <span>Investigating...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <Sparkles className="w-4 h-4 text-[#E8A276]" />
                   <span>Deploy Agent</span>
                 </>
               )}

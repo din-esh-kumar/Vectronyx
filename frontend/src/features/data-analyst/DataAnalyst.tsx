@@ -15,7 +15,6 @@ import {
   Layers,
   Database,
   Briefcase,
-  ShieldAlert,
   Target,
   Award,
   FileText,
@@ -905,25 +904,25 @@ export default function DataAnalyst() {
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
             <button
               onClick={handleLoadSample}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium transition shadow-md cursor-pointer active:scale-95 border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shadow-md cursor-pointer active:scale-95 border ${
                 fileName === "saas_enterprise_q3.csv"
-                  ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white border-violet-400"
-                  : "bg-violet-950/40 hover:bg-violet-900/50 text-violet-200 border-violet-500/25"
+                  ? "bg-gradient-to-r from-violet-700 to-purple-800 text-white border-violet-400/60 shadow-[0_0_15px_rgba(168,85,247,0.35)]"
+                  : "bg-violet-950/60 hover:bg-violet-900/60 text-violet-200 border-violet-500/30"
               }`}
             >
-              <Database className="w-3.5 h-3.5 text-amber-400" />
+              <Database className="w-3.5 h-3.5 text-[#E8A276]" />
               <span>SaaS ARR ($1.28M)</span>
             </button>
 
             <button
               onClick={handleLoadFintechSample}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium transition shadow-md cursor-pointer active:scale-95 border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shadow-md cursor-pointer active:scale-95 border ${
                 fileName === "fintech_global_volume.csv"
-                  ? "bg-gradient-to-r from-amber-600 to-stone-700 text-white border-amber-400"
-                  : "bg-amber-950/40 hover:bg-amber-900/50 text-amber-200 border-amber-500/25"
+                  ? "bg-gradient-to-r from-[#884F2E] to-[#542A13] text-white border-[#BD8E70] shadow-[0_0_15px_rgba(189,142,112,0.35)]"
+                  : "bg-[#3D1C0B]/60 hover:bg-[#542A13]/60 text-[#D4B39B] border-[#884F2E]/30"
               }`}
             >
-              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <Zap className="w-3.5 h-3.5 text-[#E8A276]" />
               <span>FinTech Volume ($11.8M)</span>
             </button>
           </div>
@@ -1009,16 +1008,16 @@ export default function DataAnalyst() {
             <button
               onClick={handleGenerateDashboard}
               disabled={loading}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 via-purple-700 to-amber-600 hover:from-violet-500 hover:to-amber-500 disabled:opacity-50 text-white font-medium text-xs sm:text-sm transition shadow-lg shadow-violet-900/40 cursor-pointer active:scale-95"
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30"
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
                   <span>Synthesizing Dossier...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <Sparkles className="w-4 h-4 text-[#E8A276]" />
                   <span>Generate Executive Dossier</span>
                 </>
               )}

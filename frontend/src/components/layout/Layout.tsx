@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
@@ -18,12 +18,12 @@ export default function Layout() {
       {/* FIXED HEADER */}
       <Header setMobileOpen={setMobileOpen} />
 
-      <div className="flex pt-16 relative z-10">
+      <div className="flex pt-16 relative z-10 min-h-screen">
         {/* SIDEBAR */}
         <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-        {/* MAIN APPLICATION CONTAINER */}
-        <main className="flex-1 ml-0 md:ml-16 min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-all">
+        {/* MAIN APPLICATION CONTAINER (NEVER OVERLAPPED) */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-all">
           <Outlet />
         </main>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../store/useAppStore";
 import {
@@ -13,7 +13,6 @@ import {
   Zap,
   Sun,
   Moon,
-  Layers
 } from "lucide-react";
 
 export default function CommandPalette() {

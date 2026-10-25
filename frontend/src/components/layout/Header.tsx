@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAppStore } from "../../store/useAppStore";
@@ -8,8 +8,6 @@ import {
   Bell,
   Sun,
   Moon,
-  Sparkles,
-  Zap,
   CheckCircle2,
   AlertTriangle,
   Info,
