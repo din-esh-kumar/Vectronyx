@@ -1,23 +1,30 @@
+import React, { useState } from "react";
+import { Outlet } from "react-router-dom";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-import { Outlet } from "react-router-dom";
-import { useState } from "react";
+import CommandPalette from "./CommandPalette";
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="h-screen bg-gray-50">
-      {/*  HEADER (FIXED) */}
+    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)] transition-colors duration-200 relative selection:bg-violet-600/30 selection:text-violet-200">
+      {/* Ambient background lighting */}
+      <div className="ambient-glow" />
+
+      {/* Global Command Palette (Ctrl+K) */}
+      <CommandPalette />
+
+      {/* FIXED HEADER */}
       <Header setMobileOpen={setMobileOpen} />
 
-      <div className="flex pt-16">
-        {/*  SIDEBAR (FIXED) */}
-        <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}/>
+      <div className="flex pt-16 relative z-10">
+        {/* SIDEBAR */}
+        <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-        {/*  MAIN CONTENT */}
-        <main className="flex-1 ml-0 md:ml-16 p-4 md:p-6">
-          <Outlet/>
+        {/* MAIN APPLICATION CONTAINER */}
+        <main className="flex-1 ml-0 md:ml-16 min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-all">
+          <Outlet />
         </main>
       </div>
     </div>

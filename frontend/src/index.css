@@ -1,9 +1,340 @@
 @import "tailwindcss";
 
+@layer base {
+  :root {
+    --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
 
-:root {
-  --primary: #8550da;
-  --secondary: #7442c6;
-  --accent: #cdafff;
-  --dark: #44188c;
+    /* Deep Royal & Electric Violet Palette */
+    --violet-50: #FAF5FF;
+    --violet-100: #F3E8FF;
+    --violet-200: #E9D5FF;
+    --violet-300: #D8B4FE;
+    --violet-400: #C084FC;
+    --violet-500: #A855F7;
+    --violet-600: #9333EA;
+    --violet-700: #7E22CE;
+    --violet-800: #6B21A8;
+    --violet-900: #581C87;
+    --violet-950: #3B0764;
+
+    /* Warm Roasted Brown, Cognac & Rich Bronze Palette */
+    --brown-50: #FDF9F6;
+    --brown-100: #F7EFE9;
+    --brown-200: #EEDDD2;
+    --brown-300: #DEC1B0;
+    --brown-400: #C79D86;
+    --brown-500: #A9795E;
+    --brown-600: #8D5C43;
+    --brown-700: #714631;
+    --brown-800: #573322;
+    --brown-900: #3D2216;
+    --brown-950: #26140C;
+
+    /* Luminous Bronze & Amber Highlights */
+    --bronze-glow: rgba(196, 120, 71, 0.22);
+    --violet-glow: rgba(168, 85, 247, 0.22);
+
+    /* Dark Theme Surface Tokens (Deep Velvet Violet + Smoked Espresso) */
+    --bg-base: #0C0815;
+    --bg-surface: #140E20;
+    --bg-surface-elevated: #1B122B;
+    --bg-card: #201533;
+    --bg-card-hover: #291B42;
+    --border-subtle: rgba(168, 85, 247, 0.16);
+    --border-bronze: rgba(196, 120, 71, 0.24);
+    --text-primary: #F7F3FC;
+    --text-secondary: #C8BED8;
+    --text-muted: #8F82A3;
+  }
+
+  .light {
+    --bg-base: #FAF7F2;
+    --bg-surface: #FFFFFF;
+    --bg-surface-elevated: #F5EFE6;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F8F3EC;
+    --border-subtle: rgba(126, 34, 206, 0.12);
+    --border-bronze: rgba(141, 92, 67, 0.2);
+    --text-primary: #24140D;
+    --text-secondary: #573A2A;
+    --text-muted: #856755;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    overflow-x: hidden;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Luxury Violet & Warm Roasted Walnut Ambient Lighting */
+.ambient-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-glow::before {
+  content: "";
+  position: absolute;
+  top: -8%;
+  left: 12%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(147, 51, 234, 0.14) 0%, rgba(107, 33, 168, 0.05) 55%, transparent 75%);
+  filter: blur(90px);
+  border-radius: 50%;
+}
+
+.ambient-glow::after {
+  content: "";
+  position: absolute;
+  top: 10%;
+  right: 8%;
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, rgba(199, 157, 134, 0.12) 0%, rgba(113, 70, 49, 0.06) 50%, transparent 75%);
+  filter: blur(95px);
+  border-radius: 50%;
+}
+
+/* Glassmorphism Surface Panels */
+.glass-panel {
+  background: rgba(20, 14, 32, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(168, 85, 247, 0.15);
+}
+
+.light .glass-panel {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(141, 92, 67, 0.15) !important;
+  box-shadow: 0 4px 24px rgba(61, 34, 22, 0.06);
+}
+
+/* Premium Floating Cards */
+.glass-card {
+  background: linear-gradient(145deg, rgba(27, 18, 43, 0.82) 0%, rgba(32, 21, 51, 0.65) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  box-shadow: 0 8px 32px -4px rgba(7, 4, 14, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.light .glass-card {
+  background: linear-gradient(145deg, #FFFFFF 0%, #FAF5EE 100%) !important;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(141, 92, 67, 0.18) !important;
+  box-shadow: 0 6px 28px -4px rgba(61, 34, 22, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Warm Bronze & Chestnut Accent Cards */
+.glass-card-bronze {
+  background: linear-gradient(145deg, rgba(38, 20, 12, 0.85) 0%, rgba(55, 31, 20, 0.6) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(199, 157, 134, 0.28);
+  box-shadow: 0 8px 32px -4px rgba(28, 12, 6, 0.4), inset 0 1px 0 rgba(238, 221, 210, 0.12);
+}
+
+.light .glass-card-bronze {
+  background: linear-gradient(145deg, #FFFDF9 0%, #F6EDE4 100%) !important;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(199, 157, 134, 0.35) !important;
+  box-shadow: 0 6px 24px -4px rgba(87, 51, 34, 0.1) !important;
+}
+
+/* Smooth Interactive Card Hover */
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(192, 132, 252, 0.38);
+  box-shadow: 0 14px 38px -6px rgba(107, 33, 168, 0.3), 0 0 20px rgba(199, 157, 134, 0.15);
+}
+
+/* Signature Gradient Text: Violet to Warm Roasted Bronze */
+.text-gradient-vb {
+  background: linear-gradient(135deg, #D8B4FE 0%, #C084FC 45%, #E29F74 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.light .text-gradient-vb {
+  background: linear-gradient(135deg, #7E22CE 0%, #9333EA 45%, #8D5C43 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.text-gradient-bronze {
+  background: linear-gradient(135deg, #F2C4A2 0%, #C79D86 50%, #9A5B38 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.light .text-gradient-bronze {
+  background: linear-gradient(135deg, #8D5C43 0%, #714631 50%, #573322 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Custom Sleek Dual-Tone Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(20, 14, 32, 0.5);
+}
+
+.light ::-webkit-scrollbar-track {
+  background: rgba(247, 239, 233, 0.8);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #7E22CE 0%, #8D5C43 100%);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #9333EA 0%, #A9795E 100%);
+}
+
+/* Custom Focus Ring with Violet & Bronze Harmony */
+.focus-vb:focus {
+  outline: none;
+  border-color: #A855F7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.28), 0 0 14px rgba(199, 157, 134, 0.25);
+}
+
+/* Keyframe Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.25), 0 0 5px rgba(199, 157, 134, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.4), 0 0 12px rgba(199, 157, 134, 0.35);
+  }
+}
+
+.animate-pulseGlow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+/* Light mode high-contrast text adaptations */
+.light .text-white {
+  color: #24140D !important;
+}
+
+.light .text-violet-100 {
+  color: #2C133E !important;
+}
+
+.light .text-violet-200 {
+  color: #3F1D59 !important;
+}
+
+.light .text-violet-300 {
+  color: #581C87 !important;
+}
+
+.light .text-amber-100,
+.light .text-orange-100 {
+  color: #3D2216 !important;
+}
+
+.light .text-amber-200,
+.light .text-orange-200 {
+  color: #573322 !important;
+}
+
+.light .text-amber-300,
+.light .text-orange-300 {
+  color: #714631 !important;
+}
+
+.light .text-amber-400,
+.light .text-orange-400 {
+  color: #8D5C43 !important;
+}
+
+/* Ensure buttons with solid/gradient dark backgrounds retain crisp white text */
+.light button.bg-gradient-to-r,
+.light a.bg-gradient-to-r,
+.light button.bg-gradient-to-r span,
+.light a.bg-gradient-to-r span,
+.light button.bg-violet-600,
+.light button.bg-violet-700,
+.light button.bg-amber-600,
+.light button.bg-violet-600 span,
+.light button.bg-violet-700 span,
+.light button.bg-amber-600 span {
+  color: #FFFFFF !important;
+}
+
+/* Dark container backgrounds in light mode */
+.light .bg-black\/30,
+.light .bg-black\/40,
+.light .bg-black\/60 {
+  background-color: rgba(247, 239, 233, 0.9) !important;
+  color: #26140C !important;
+  border-color: rgba(141, 92, 67, 0.2) !important;
+}
+
+.light .bg-violet-950\/20,
+.light .bg-violet-950\/30,
+.light .bg-violet-950\/40,
+.light .bg-violet-950\/50,
+.light .bg-violet-950\/60,
+.light .bg-violet-950\/80 {
+  background-color: rgba(243, 232, 255, 0.75) !important;
+}
+
+.light .bg-amber-950\/20,
+.light .bg-amber-950\/30,
+.light .bg-amber-950\/40,
+.light .bg-amber-950\/50,
+.light .bg-amber-950\/60 {
+  background-color: rgba(253, 244, 237, 0.75) !important;
+}
+
+.light input,
+.light textarea,
+.light select {
+  color: #24140D !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: rgba(141, 92, 67, 0.25) !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #9E8373 !important;
 }
