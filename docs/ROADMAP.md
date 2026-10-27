@@ -42,7 +42,7 @@ This document outlines the current progress, implementation milestones, and cont
 
 ### Milestone 4: Enhanced Workstation UI (v0.4.0) — ⚪ Planned
 - [ ] Full CSV analysis screen with column histograms, correlation matrices, and dynamic filters.
-- [ ] Streaming research logs showing real-time agent thoughts and actions.
+- [x] Streaming research logs & LLM execution via Server-Sent Events (SSE).
 - [ ] Memory explorer to view, filter, and delete stored contextual memories.
 
 ---

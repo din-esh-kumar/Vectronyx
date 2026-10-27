@@ -2,6 +2,7 @@
 import json
 import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -13,6 +14,7 @@ from app.modules.data_analyst.schemas import (
 from app.modules.data_analyst.analyst import (
     profile_dataset,
     generate_complete_dashboard,
+    generate_complete_dashboard_stream,
     generate_dossier_markdown,
 )
 from app.modules.data_analyst.export_powerbi import generate_powerbi_pbip_archive
@@ -71,6 +73,51 @@ async def generate_dashboard_endpoint(
     except Exception as e:
         logger.error(f"Error generating dashboard: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate dashboard: {str(e)}")
+
+
+@router.post("/generate-dashboard/stream")
+async def generate_dashboard_stream_endpoint(
+    file: Optional[UploadFile] = File(None),
+    prompt: str = Form(...),
+    dataset_name: Optional[str] = Form("dataset.csv"),
+    raw_csv: Optional[str] = Form(None)
+):
+    """
+    Server-Sent Events (SSE) telemetry stream for executive dashboard synthesis:
+    Emits dataset distribution profiling -> IsolationForest anomaly scan ->
+    Groq LPU synthesis -> final DashboardPlan JSON.
+    """
+    try:
+        csv_text = ""
+        if file:
+            content_bytes = await file.read()
+            csv_text = content_bytes.decode("utf-8", errors="replace")
+            dataset_name = file.filename or dataset_name
+        elif raw_csv:
+            csv_text = raw_csv
+        else:
+            raise HTTPException(status_code=400, detail="Either 'file' or 'raw_csv' must be provided.")
+
+        return StreamingResponse(
+            generate_complete_dashboard_stream(
+                csv_text=csv_text,
+                user_prompt=prompt,
+                dataset_name=dataset_name or "dataset.csv"
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting dashboard stream: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start stream: {str(e)}")
+
 
 
 @router.post("/export/powerbi")

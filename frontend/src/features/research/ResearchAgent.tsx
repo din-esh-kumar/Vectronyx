@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Sparkles,
   Search,
@@ -19,9 +19,12 @@ import {
   Filter,
   RefreshCw,
   Terminal,
-  Activity
+  Activity,
+  Square,
+  Radio
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { fetchEventStream } from "../../lib/sse";
 
 interface ResearchSource {
   title: string;
@@ -172,95 +175,127 @@ export default function ResearchAgent() {
   const [activeTab, setActiveTab] = useState<"dossier" | "traces" | "sources">("dossier");
   const [copied, setCopied] = useState(false);
 
-  const handleLaunchResearch = (customQuery?: string) => {
+  const [liveStatus, setLiveStatus] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStopResearch = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsSearching(false);
+    setLiveStatus("");
+    toast("Agent execution halted by user.", { icon: "🛑", id: "research-toast" });
+  };
+
+  const handleLaunchResearch = async (customQuery?: string) => {
     const q = customQuery || query;
     if (!q.trim()) {
       toast.error("Please enter a research inquiry");
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortCtrl = new AbortController();
+    abortControllerRef.current = abortCtrl;
+
     setIsSearching(true);
+    setLiveStatus("Initializing autonomous ReAct agent...");
+    setActiveTab("traces");
+
+    const scaffoldReport: ResearchReport = {
+      id: `rep-${Date.now()}`,
+      query: q,
+      timestamp: "Streaming...",
+      executiveSummary: `Autonomous investigation in progress for: "${q}". Telemetry streaming live...`,
+      confidenceScore: 0,
+      timeElapsed: "0.0s",
+      keyFindings: [],
+      sources: [],
+      reactTraces: [],
+      synthesisMarkdown: "",
+    };
+    setReport(scaffoldReport);
+
     toast.loading("Deploying autonomous ReAct web explorer...", { id: "research-toast" });
 
-    setTimeout(() => {
-      const newReport: ResearchReport = {
-        id: `rep-${Date.now()}`,
-        query: q,
-        timestamp: "Just now",
-        executiveSummary: `Autonomous investigation for: "${q}". The agent performed 3 search queries via DuckDuckGo, extracted structured markdown across 4 web sources, and synthesized a high-confidence brief via Google Gemini 1M Context reasoning.`,
-        confidenceScore: 96,
-        timeElapsed: depth === "quick" ? "0.9s" : depth === "react" ? "2.1s" : "4.3s",
-        keyFindings: [
-          {
-            title: "Primary Vector Convergence",
-            description: "Cross-verified evidence demonstrates strong consensus across industry literature and verified benchmarks.",
-            impact: "High",
-            category: "Synthesis",
-          },
-          {
-            title: "Operational Efficiency Benchmark",
-            description: "Adopting streamlined workflows reduces infrastructure complexity by up to 54% without compromising throughput.",
-            impact: "Critical",
-            category: "Operations",
-          },
-          {
-            title: "Risk Mitigation Strategy",
-            description: "Identified 2 potential edge-case failure modes during distributed data ingestion; preventive guardrails formulated.",
-            impact: "Medium",
-            category: "Risk",
-          },
-        ],
-        sources: [
-          {
-            title: `Technical Insights: ${q.slice(0, 40)}...`,
-            url: "https://research.vectronyx.ai/deep-dive",
-            snippet: "Consolidated analysis and verified empirical observations compiled by autonomous ReAct crawler.",
-            reliability: 98,
-            domain: "vectronyx.ai",
-          },
-          {
-            title: "ArXiv AI Computing Journal - 2026 Proceedings",
-            url: "https://arxiv.org/abs/2601.09912",
-            snippet: "Empirical evaluation of multi-agent reasoning systems under large-scale retrieval constraints.",
-            reliability: 97,
-            domain: "arxiv.org",
-          },
-        ],
-        reactTraces: [
-          {
-            step: 1,
-            thought: `Deconstructing query '${q}' into semantic search tokens.`,
-            action: `DuckDuckGo Web Search: '${q}'`,
-            observation: "Discovered 8 high-relevance URLs matching technical keywords.",
-          },
-          {
-            step: 2,
-            thought: "Validating claims across independent domain sources to eliminate synthetic hallucinations.",
-            action: "Trafilatura scrape and text cleansing",
-            observation: "Filtered out advertisements, navigation bars, and boilerplate. Retained 14,200 tokens of core text.",
-          },
-          {
-            step: 3,
-            thought: "Running Gemini 1M Context cross-verification and structuring C-Suite takeaway.",
-            action: "Synthesis and verification output",
-            observation: "Final report verified and ready for export.",
-          },
-        ],
-        synthesisMarkdown: `# Executive Synthesis: ${q}
+    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-## 1. Executive Summary
-An exhaustive multi-hop investigation was completed. The findings substantiate high performance and security compliance across evaluated architectures.
-
-## 2. Key Actionable Takeaways
-1. **Immediate Action**: Align vector indexing with business-critical recall targets.
-2. **Architecture**: Implement defensive circuit-breakers on upstream API endpoints.
-3. **Continuous Monitoring**: Track latency distributions with p99 SLA guarantees.`,
-      };
-
-      setReport(newReport);
-      setIsSearching(false);
-      toast.success("Autonomous research complete!", { id: "research-toast" });
-    }, 2200);
+    try {
+      await fetchEventStream(
+        `${API_BASE}/api/research/stream`,
+        {
+          method: "POST",
+          body: { query: q, depth, domain_filter: domainFilter },
+          signal: abortCtrl.signal,
+        },
+        {
+          onStatus: (data) => {
+            setLiveStatus(data.message);
+            toast.loading(data.message, { id: "research-toast" });
+            if (data.stage === "synthesizing") {
+              setActiveTab("dossier");
+            }
+          },
+          onThought: (step) => {
+            setReport((prev) => {
+              if (!prev) return prev;
+              const existingIdx = prev.reactTraces.findIndex((t) => t.step === step.step);
+              const updatedTraces = [...prev.reactTraces];
+              if (existingIdx >= 0) {
+                updatedTraces[existingIdx] = { ...updatedTraces[existingIdx], ...step };
+              } else {
+                updatedTraces.push(step);
+              }
+              return { ...prev, reactTraces: updatedTraces };
+            });
+          },
+          onToolStart: (tool) => {
+            setLiveStatus(`Invoking ${tool.tool}...`);
+          },
+          onToolEnd: (tool) => {
+            setReport((prev) => {
+              if (!prev) return prev;
+              const newSources = tool.sources ? [...prev.sources, ...tool.sources] : prev.sources;
+              const uniqueSources = Array.from(new Map(newSources.map((s) => [s.url, s])).values());
+              return { ...prev, sources: uniqueSources };
+            });
+          },
+          onToken: (delta) => {
+            setReport((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                synthesisMarkdown: prev.synthesisMarkdown + delta,
+              };
+            });
+          },
+          onComplete: (completedReport) => {
+            setReport((prev) => ({
+              ...completedReport,
+              synthesisMarkdown: prev?.synthesisMarkdown || completedReport.synthesisMarkdown,
+            }));
+            setIsSearching(false);
+            setLiveStatus("");
+            toast.success("Autonomous research complete & dossier synthesized!", { id: "research-toast" });
+          },
+          onError: (err) => {
+            if (abortCtrl.signal.aborted) return;
+            console.error("SSE stream error:", err);
+            toast.error(err.message || "Streaming interrupted", { id: "research-toast" });
+            setIsSearching(false);
+            setLiveStatus("");
+          },
+        }
+      );
+    } catch (err: any) {
+      if (!abortCtrl.signal.aborted) {
+        setIsSearching(false);
+        setLiveStatus("");
+      }
+    }
   };
 
   const handleCopyMarkdown = () => {
@@ -329,24 +364,43 @@ An exhaustive multi-hop investigation was completed. The findings substantiate h
             />
             <Search className="w-5 h-5 text-amber-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
 
-            <button
-              onClick={() => handleLaunchResearch()}
-              disabled={isSearching}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] shadow-md shadow-violet-950/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 border border-[#E8A276]/30"
-            >
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
               {isSearching ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
-                  <span>Investigating...</span>
+                  <button
+                    onClick={handleStopResearch}
+                    type="button"
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-300 bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/40 shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Stop real-time agent execution"
+                  >
+                    <Square className="w-3 h-3 fill-rose-400 text-rose-400" />
+                    <span className="hidden sm:inline">Stop</span>
+                  </button>
+                  <div className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-violet-700 to-[#884F2E] flex items-center gap-1.5 border border-[#E8A276]/30">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#E8A276]" />
+                    <span>Streaming...</span>
+                  </div>
                 </>
               ) : (
-                <>
+                <button
+                  onClick={() => handleLaunchResearch()}
+                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] shadow-md shadow-violet-950/40 transition-all flex items-center gap-2 cursor-pointer active:scale-95 border border-[#E8A276]/30"
+                >
                   <Sparkles className="w-4 h-4 text-[#E8A276]" />
                   <span>Deploy Agent</span>
-                </>
+                </button>
               )}
-            </button>
+            </div>
           </div>
+
+          {/* Real-time Streaming Telemetry Banner */}
+          {isSearching && liveStatus && (
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-violet-950/70 border border-violet-500/35 text-xs font-mono shadow-md animate-fadeIn">
+              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
+              <span className="font-semibold text-white uppercase text-[10px] tracking-wider shrink-0">Real-Time Telemetry:</span>
+              <span className="text-amber-300 truncate">{liveStatus}</span>
+            </div>
+          )}
 
           {/* Configuration controls */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">

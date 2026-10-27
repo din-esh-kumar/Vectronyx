@@ -58,9 +58,11 @@ scipy==1.14.0                     # Statistical analysis
 # ----------------------------
 requests==2.32.3                  # HTTP requests
 beautifulsoup4==4.12.3            # HTML scraping
-lxml==5.2.2                       # XML/HTML parser (bs4 backend)
-duckduckgo-search==6.2.6          # Free web search API
-trafilatura==1.12.0               # Clean article text extraction
+lxml>=5.3.0                       # XML/HTML parser (bs4 backend)
+lxml_html_clean>=0.4.6            # HTML cleaner for trafilatura
+ddgs>=9.16.1                      # Free DuckDuckGo web search API
+duckduckgo-search>=8.1.1          # Backward compatibility alias
+trafilatura>=2.3.1                # Clean article text extraction
 
 # ----------------------------
 # Pydantic & Validation

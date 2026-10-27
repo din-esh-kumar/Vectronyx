@@ -9,6 +9,7 @@ if backend_root not in sys.path:
 from fastapi import FastAPI
 from app.middleware.auth import router as auth_router
 from app.modules.data_analyst.routes import router as analyst_router
+from app.modules.research_agent.routes import router as research_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -25,6 +26,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/auth")
 app.include_router(analyst_router, prefix="/api/analyst")
+app.include_router(research_router, prefix="/api/research")
 
 @app.get("/")
 def root():

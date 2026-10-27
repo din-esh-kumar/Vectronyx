@@ -2,13 +2,14 @@
 import io
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, AsyncGenerator
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 import httpx
 
 from app.core.config import settings
+from app.core.sse import sse_event
 from app.modules.data_analyst.schemas import (
     ColumnMetric,
     DatasetProfile,
@@ -468,8 +469,9 @@ async def call_llm_dashboard_planner(schema_summary: str, row_count: int, user_p
         try:
             url = "https://api.groq.com/openai/v1/chat/completions"
             headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            groq_model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
             payload = {
-                "model": "llama-3.3-70b-versatile",
+                "model": groq_model,
                 "messages": [
                     {"role": "system", "content": DASHBOARD_PLANNER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_content}
@@ -677,3 +679,77 @@ async def generate_complete_dashboard(csv_text: str, user_prompt: str, dataset_n
 
     plan.anomalies = anomalies
     return plan
+
+
+async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, dataset_name: str = "dataset.csv") -> AsyncGenerator[str, None]:
+    """
+    SSE Telemetry Stream for the Data Analyst & Executive Dashboard Generator:
+    1. Emits profiling progress and data integrity score.
+    2. Emits IsolationForest anomaly scan status.
+    3. Emits Groq LPU synthesis notification.
+    4. Emits visual series aggregation and Power BI / Tableau compilation.
+    5. Emits complete DashboardPlan payload.
+    """
+    yield sse_event("status", {
+        "step": 1,
+        "stage": "profiling",
+        "message": f"Step 1/4: Ingesting dataset '{dataset_name}' and computing distribution quantiles..."
+    })
+
+    df, profile, anomalies = profile_dataset(csv_text)
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    cat_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+
+    diagnostics = calculate_statistical_diagnostics(df, numeric_cols)
+    concentration = calculate_concentration_analysis(df, cat_cols, numeric_cols)
+
+    yield sse_event("status", {
+        "step": 2,
+        "stage": "anomaly_detection",
+        "message": f"Step 2/4: Scikit-Learn IsolationForest identified {len(anomalies)} multidimensional anomalies (Data Integrity: {profile.data_integrity_score}%)..."
+    })
+
+    # Prepare schema string for LLM
+    schema_lines = []
+    for col in profile.columns:
+        stat_summary = f"dtype={col.dtype}, unique={col.unique_count}"
+        if col.min_val is not None:
+            stat_summary += f", min={col.min_val}, max={col.max_val}, mean={col.mean_val}, skew={col.skewness}, cv={col.cv}"
+        schema_lines.append(f"- {col.name} ({stat_summary}, sample={col.sample_values[:3]})")
+    schema_summary = "\n".join(schema_lines)
+
+    yield sse_event("status", {
+        "step": 3,
+        "stage": "llm_synthesis",
+        "message": f"Step 3/4: Groq Cloud LPU synthesizing C-Suite KPIs, Power BI DAX, and Tableau formulas..."
+    })
+
+    llm_plan_dict = await call_llm_dashboard_planner(schema_summary, profile.row_count, user_prompt, dataset_name)
+    
+    if llm_plan_dict:
+        try:
+            plan = DashboardPlan(**llm_plan_dict)
+            plan.dataset_name = dataset_name
+            if plan.dossier:
+                plan.dossier.statistical_diagnostics = diagnostics
+                plan.dossier.concentration_risk = concentration
+                plan.dossier.data_integrity_score = profile.data_integrity_score
+        except Exception as e:
+            logger.warning(f"Error parsing LLM plan: {e}, falling back to veteran heuristic plan")
+            plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
+    else:
+        plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
+
+    yield sse_event("status", {
+        "step": 4,
+        "stage": "series_aggregation",
+        "message": "Step 4/4: Aggregating visual chart series and compiling Power BI PBIP package..."
+    })
+
+    for vis in plan.visuals:
+        vis.series_data = compute_visual_series_data(df, vis)
+
+    plan.anomalies = anomalies
+
+    yield sse_event("complete", plan.model_dump())
+

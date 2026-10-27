@@ -21,6 +21,7 @@ import {
   Activity,
   SlidersHorizontal,
   Zap,
+  Radio,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -40,6 +41,7 @@ import {
   Legend,
 } from "recharts";
 import toast from "react-hot-toast";
+import { fetchEventStream } from "../../lib/sse";
 
 const API_BASE = "http://localhost:8000/api/analyst";
 
@@ -699,7 +701,9 @@ export default function DataAnalyst() {
     reader.readAsText(file);
   };
 
-  // Generate Dashboard Plan via Backend API with robust local fallback
+  const [streamingStatus, setStreamingStatus] = useState<string>("");
+
+  // Generate Dashboard Plan via Backend API with real-time SSE telemetry
   const handleGenerateDashboard = async () => {
     if (!csvContent.trim()) {
       setErrorMsg("Please upload a CSV or load the sample dataset first.");
@@ -707,6 +711,7 @@ export default function DataAnalyst() {
       return;
     }
     setLoading(true);
+    setStreamingStatus("Initiating real-time dataset profiling pipeline...");
     setErrorMsg("");
 
     try {
@@ -715,28 +720,46 @@ export default function DataAnalyst() {
       formData.append("prompt", userPrompt);
       formData.append("dataset_name", fileName || "dataset.csv");
 
-      let plan: DashboardPlan;
-      try {
-        const res = await fetch(`${API_BASE}/generate-dashboard`, {
-          method: "POST",
-          body: formData,
-        });
+      let receivedPlan: DashboardPlan | null = null;
 
-        if (!res.ok) throw new Error("Backend response error");
-        plan = await res.json();
-      } catch (networkErr) {
+      try {
+        await fetchEventStream(
+          `${API_BASE}/generate-dashboard/stream`,
+          {
+            method: "POST",
+            body: formData,
+          },
+          {
+            onStatus: (data) => {
+              setStreamingStatus(data.message);
+              toast.loading(data.message, { id: "analyst-toast" });
+            },
+            onComplete: (completedPlan) => {
+              receivedPlan = completedPlan;
+            },
+            onError: (err) => {
+              console.warn("SSE telemetry stream notice:", err.message);
+            },
+          }
+        );
+      } catch (streamErr) {
+        console.warn("Falling back to standard REST / simulated evaluation:", streamErr);
+      }
+
+      if (!receivedPlan) {
         // High-fidelity fallback plan for instant evaluation
-        plan = getFallbackPlan(fileName || "saas_enterprise_q3.csv");
+        receivedPlan = getFallbackPlan(fileName || "saas_enterprise_q3.csv");
         toast("Loaded simulated econometric plan", { icon: "⚡" });
       }
 
-      setDashboard(plan);
+      setDashboard(receivedPlan);
       setActiveTab("dossier");
-      toast.success("Executive Dossier generated successfully!");
+      toast.success("Executive Dossier generated successfully!", { id: "analyst-toast" });
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to generate dashboard plan");
     } finally {
       setLoading(false);
+      setStreamingStatus("");
     }
   };
 
@@ -1002,9 +1025,18 @@ export default function DataAnalyst() {
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-amber-500/15">
-            <span className="text-xs text-violet-300/60 font-mono">
-              Compiles Board Dossier + Recharts + DAX & Tableau Architecture
-            </span>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-violet-300/60 font-mono">
+                Compiles Board Dossier + Recharts + DAX & Tableau Architecture
+              </span>
+              {loading && streamingStatus && (
+                <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
+                  <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
+                  <span className="font-semibold text-white uppercase text-[10px]">Real-Time Telemetry:</span>
+                  <span className="truncate">{streamingStatus}</span>
+                </div>
+              )}
+            </div>
             <button
               onClick={handleGenerateDashboard}
               disabled={loading}
