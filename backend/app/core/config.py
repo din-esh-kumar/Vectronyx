@@ -38,7 +38,10 @@ class Settings:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-    # Vector Store & Memory
+    # Vector Store & Embeddings (Zero PyTorch: Gemini Cloud + FastEmbed ONNX)
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "auto")  # "auto", "gemini", "fastembed"
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    FASTEMBED_MODEL: str = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")
     VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "supabase_pgvector")
     VECTOR_DIMENSION: int = int(os.getenv("VECTOR_DIMENSION", "768"))
 

@@ -26,7 +26,7 @@ flowchart LR
 
 | Component | File Path | Technology | Responsibility |
 | :--- | :--- | :--- | :--- |
-| **Embedder** | `modules/memory/embedder.py` | Google / Sentence-Transformers | Converts raw text and schema tokens into normalized dense vectors. |
+| **Embedder** | `modules/memory/embedder.py` | Google Gemini / FastEmbed (Zero PyTorch) | Dual-mode embedder: Online Gemini Cloud (768d) with Offline FastEmbed ONNX fallback. |
 | **Memory Store** | `modules/memory/memory_store.py` | `pgvector`, `SQLAlchemy` | Executes cosine similarity searches (`<=>`) directly within PostgreSQL. |
 | **Relational Sync** | `db/repositories/memory_repo.py` | `SQLAlchemy`, Supabase | Persists user IDs, text content, timestamps, and vector embeddings in PostgreSQL. |
 | **Schemas** | `modules/memory/schemas.py` | `pydantic` | Defines Pydantic validation contracts for memory creation, search filters, and results. |

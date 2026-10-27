@@ -22,4 +22,10 @@ if missing:
         f"Missing required Supabase environment variables: {', '.join(missing)}"
     )
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception:
+        # Handle new Supabase key formats or offline environments gracefully
+        supabase = None

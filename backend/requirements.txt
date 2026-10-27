@@ -38,11 +38,10 @@ langchain-community==0.2.16       # Community integrations
 langchain-core==0.2.38            # Core abstractions
 
 # ----------------------------
-# Embeddings & Vector Search
+# Embeddings & Vector Search (Zero PyTorch: Gemini Cloud + FastEmbed ONNX)
 # ----------------------------
-sentence-transformers==3.1.1      # MiniLM embeddings
-faiss-cpu==1.8.0                  # Vector similarity search (CPU)
-numpy==1.26.4                     # Required by FAISS + transformers
+fastembed>=0.3.4                  # Fast ONNX-based local embeddings
+numpy>=1.26.4                     # Array manipulation for vector math
 
 # ----------------------------
 # Data Science & Analysis

@@ -287,8 +287,10 @@ Key configuration parameters in `backend/.env`:
 | `GROQ_API_KEY` | `gsk_...` | Groq Cloud API authentication key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model selection |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama daemon URL |
-| `VECTOR_STORE_PATH` | `./vector_store` | Path for serialized FAISS index |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence-Transformers embedding model |
+| `EMBEDDING_PROVIDER` | `auto` | Embedding engine: `auto`, `gemini`, or `fastembed` |
+| `EMBEDDING_MODEL` | `gemini-embedding-001` | Google Gemini Cloud / FastEmbed model |
+| `FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed ONNX local fallback model |
+| `VECTOR_DIMENSION` | `768` | Embedding dimensionality (768d or 384d) |
 
 ---
 
