@@ -8,8 +8,7 @@ This document outlines the current progress, implementation milestones, and cont
 
 | Module / Feature | Status | Priority | Notes |
 | :--- | :--- | :--- | :--- |
-| **Project Setup & Base Architecture** | ✅ Completed | High | Clean service split (`frontend/`, `backend/`, `infra/`). |
-| **Docker Compose Orchestration** | ✅ Completed | High | Multi-container setup with live volume mounts for rapid dev. |
+| **Project Setup & Base Architecture** | ✅ Completed | High | Clean service split (`frontend/`, `backend/`). |
 | **Frontend Shell & Responsive Layout** | ✅ Completed | High | Collapsible desktop sidebar + mobile slide-over drawer with overlay. |
 | **Supabase Authentication UI** | ✅ Completed | High | Google OAuth, GitHub OAuth, and Email/Password flows. |
 | **Relational Database Schema (SQLAlchemy)** | ✅ Completed | High | `users`, `datasets`, `memories`, and `query_logs` models defined. |
@@ -26,8 +25,6 @@ This document outlines the current progress, implementation milestones, and cont
 
 ### Milestone 1: Foundations & Infrastructure (v0.1.0) — ✅ Complete
 - [x] Initial repository structure and dependency management (`requirements.txt`, `package.json`, `pnpm-lock.yaml`).
-- [x] Dockerfile for backend (`python:3.11-slim`) and frontend (`node:20-slim`).
-- [x] Multi-service `docker-compose.yml` with port mapping (`8000` and `5173`).
 - [x] Supabase integration for authentication and PostgreSQL connection.
 - [x] Desktop and mobile navigation layout with smooth responsive behavior.
 
@@ -56,14 +53,14 @@ We welcome contributions! Please follow standard Git practices:
 
 1. **Branching Naming Convention**:
    - `feature/<feature-name>` (e.g., `feature/research-agent-tools`)
-   - `fix/<bug-description>` (e.g., `fix/docker-entrypoint`)
+   - `fix/<bug-description>` (e.g., `fix/auth-token-refresh`)
    - `docs/<doc-topic>` (e.g., `docs/api-examples`)
 
 2. **Commit Message Format**:
    Follow [Conventional Commits](https://www.conventionalcommits.org/):
    - `feat(memory): add FAISS persistence layer`
    - `fix(auth): correct token refresh handling`
-   - `docs(readme): add docker setup instructions`
+   - `docs(readme): add setup instructions`
 
 3. **Submitting Pull Requests**:
    - Verify both frontend and backend start clean without errors.

@@ -14,7 +14,6 @@
   <img src="https://img.shields.io/badge/Vector_Store-FAISS-blue" alt="FAISS" />
   <img src="https://img.shields.io/badge/LLM-Groq_%2F_Ollama-FF6B6B" alt="LLM" />
   <img src="https://img.shields.io/badge/Database-Supabase_%2F_PostgreSQL-3ECF8E?logo=supabase&logoColor=white" alt="Supabase" />
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <a href="./CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor_Covenant-v2.1-orange.svg" alt="Contributor Covenant" /></a>
 </p>
 
@@ -33,8 +32,8 @@
 - [Project Structure](#-project-structure)
 - [Quick Start](#-quick-start)
   - [Prerequisites](#prerequisites)
-  - [Method 1: Docker Compose (Recommended)](#method-1-docker-compose-recommended)
-  - [Method 2: Native Local Development](#method-2-native-local-development)
+  - [1. Backend Setup](#1-backend-setup)
+  - [2. Frontend Setup](#2-frontend-setup)
 - [Environment Configuration](#-environment-configuration)
 - [Documentation Center](#-documentation-center)
 - [Security & Threat Mitigation](#-security--threat-mitigation)
@@ -185,7 +184,6 @@ Architected with lessons drawn from production-scale distributed systems and hig
 | **Vector DB**| Cloud Vectors | Supabase `pgvector` | Native PostgreSQL vector similarity search, ACID compliant, zero local disk files. |
 | **Cloud Storage**| Dataset Store | Supabase Storage (`datasets` bucket) | 1GB free cloud file storage, signed URLs, direct in-memory streaming. |
 | **Database** | Relational Store | PostgreSQL (Supabase) + SQLAlchemy 2.0 | ACID compliance, declarative models, Alembic migration tracking. |
-| **Containers**| Orchestration | Docker + Docker Compose | Isolated multi-service environment with host volume mounts for live dev. |
 
 ---
 
@@ -205,7 +203,6 @@ Vectronyx/
 │   │   │   ├── memory/           # Sentence Transformers & FAISS store
 │   │   │   └── research_agent/   # LangChain ReAct, DuckDuckGo & scraping
 │   │   └── services/             # LLM clients (Groq/Ollama) & vector stores
-│   ├── Dockerfile                # Python 3.11 slim container specification
 │   └── requirements.txt          # Pinned Python package dependencies
 ├── frontend/                     # React 18 + Vite Application
 │   ├── src/
@@ -214,12 +211,7 @@ Vectronyx/
 │   │   ├── features/             # Auth, Dashboard, Data Analyst, Memory, Research
 │   │   ├── lib/                  # Apollo & Supabase client initialization
 │   │   └── pages/                # 404 & standalone pages
-│   ├── Dockerfile                # Node 20 slim container with pnpm
 │   └── package.json              # Frontend packages & scripts
-├── infra/                        # Orchestration & Infrastructure
-│   ├── docker-compose.yml        # Development multi-container compose
-│   ├── nginx/                    # Reverse proxy configs
-│   └── k8s/                      # Kubernetes deployment manifests
 ├── vector_store/                 # Local FAISS index binary files
 ├── data/                         # Uploaded datasets and scratch files
 ├── docs/                         # Comprehensive Technical Documentation
@@ -230,7 +222,6 @@ Vectronyx/
 │   ├── AI_MODULES.md             # Deep dive into Memory, Research & Analyst
 │   ├── API_REFERENCE.md          # GraphQL schema & REST endpoint specs
 │   ├── DATABASE_SCHEMA.md        # PostgreSQL models & vector indexing
-│   ├── DOCKER_AND_INFRA.md       # Containerization & deployment manual
 │   ├── FRONTEND_GUIDE.md         # Component tree & design system
 │   └── ROADMAP.md                # Release milestones & contribution guide
 ├── CODE_OF_CONDUCT.md            # Contributor Covenant v2.1 + AI Safety Standards
@@ -244,34 +235,10 @@ Vectronyx/
 ### Prerequisites
 - **Node.js**: `>= 20.x LTS` and **pnpm**: `>= 9.x`
 - **Python**: `3.10` or `3.11`
-- **Docker & Compose**: (Optional, recommended)
 
 ---
 
-### Method 1: Docker Compose (Recommended)
-
-Run the full stack with hot-reloading in one command:
-
-```bash
-# 1. Clone repository
-git clone https://github.com/din-esh-kumar/Vectronyx.git
-cd Vectronyx
-
-# 2. Configure environment
-cp backend/.env.example backend/.env
-
-# 3. Launch containers
-cd infra
-docker compose up --build
-```
-
-- 🌐 **Frontend UI**: [http://localhost:5173](http://localhost:5173)
-- ⚡ **Backend API**: [http://localhost:8000](http://localhost:8000)
-- 🔍 **Interactive GraphQL Explorer**: [http://localhost:8000/graphql](http://localhost:8000/graphql)
-
----
-
-### Method 2: Native Local Development
+### Local Development Setup
 
 #### 1. Backend Setup
 ```bash
@@ -346,7 +313,6 @@ For exhaustive technical guides, explore the [`docs/`](./docs/README.md) directo
 - 🧠 [**AI Modules Deep Dive**](./docs/AI_MODULES.md) — Mechanics of Memory, Research Agent, and Data Analyst.
 - 📡 [**API & GraphQL Reference**](./docs/API_REFERENCE.md) — Complete GraphQL query/mutation and REST specs.
 - 🗄️ [**Database & Vector Store Schema**](./docs/DATABASE_SCHEMA.md) — Relational models, Alembic migrations, and FAISS.
-- 🐳 [**Docker & Infrastructure**](./docs/DOCKER_AND_INFRA.md) — Multi-container Docker Compose and production hardening.
 - 🎨 [**Frontend Architecture Guide**](./docs/FRONTEND_GUIDE.md) — React 18, Tailwind v4, navigation, and auth state.
 - 🗺️ [**Development Roadmap**](./docs/ROADMAP.md) — Feature status, milestones, and contribution standards.
 - 📜 [**Code of Conduct**](./CODE_OF_CONDUCT.md) — Contributor Covenant v2.1, AI ethics, and responsible agentic standards.
@@ -355,7 +321,7 @@ For exhaustive technical guides, explore the [`docs/`](./docs/README.md) directo
 
 ## 🗺 Roadmap & Release Milestones
 
-- [x] **v0.1.0 — Platform Foundations**: Service architecture split, Docker Compose orchestration, responsive UI shell, and Supabase auth.
+- [x] **v0.1.0 — Platform Foundations**: Service architecture split, responsive UI shell, and Supabase auth.
 - [ ] **v0.2.0 — Core AI Engines**: Full implementation of Sentence-Transformers + FAISS memory, LangChain ReAct research agent, and Pandas data analyzer.
 - [ ] **v0.3.0 — GraphQL API Binding**: Strawberry GraphQL schema and resolvers fully wired to Apollo Client.
 - [ ] **v0.4.0 — Workstation Visualizations**: Interactive CSV uploader, Recharts dynamic charts, and streaming agent execution logs.
