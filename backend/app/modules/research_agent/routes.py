@@ -20,7 +20,11 @@ async def stream_research_endpoint(req: ResearchStreamRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
     return StreamingResponse(
-        stream_research_agent(query=req.query.strip(), depth=req.depth or "react"),
+        stream_research_agent(
+            query=req.query.strip(),
+            depth=req.depth or "react",
+            csv_data=req.csv_data
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",

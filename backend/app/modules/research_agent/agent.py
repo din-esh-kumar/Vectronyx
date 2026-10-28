@@ -2,7 +2,7 @@
 import time
 import json
 import logging
-from typing import AsyncGenerator, List, Dict, Any
+from typing import AsyncGenerator, List, Dict, Any, Optional
 
 from app.core.config import settings
 from app.core.sse import sse_event
@@ -13,6 +13,7 @@ from app.modules.research_agent.schemas import (
     ResearchReport,
     WebSearchArgs,
     WebScrapeArgs,
+    DataAnalystArgs,
     ResearchPlanningDecision,
     ResearchFindingsExtraction,
 )
@@ -25,6 +26,8 @@ from app.modules.research_agent.tools import (
     scrape_page,
     execute_web_search,
     execute_web_scrape,
+    execute_data_analyst,
+    dispatch_tool_call,
 )
 from app.services.llm.instructor_client import generate_structured
 
@@ -60,14 +63,19 @@ async def stream_groq_synthesis(system_prompt: str, user_prompt: str) -> AsyncGe
         logger.warning(f"Groq streaming error: {e}", exc_info=True)
 
 
-async def stream_research_agent(query: str, depth: str = "react") -> AsyncGenerator[str, None]:
+async def stream_research_agent(
+    query: str,
+    depth: str = "react",
+    csv_data: Optional[str] = None,
+) -> AsyncGenerator[str, None]:
     """
     Autonomous ReAct research agent executing multi-hop inquiry:
     1. Status & Search Query formulation (with Instructor type-safe planning)
     2. Type-safe DuckDuckGo execution & source discovery
     3. Type-safe Trafilatura deep scraping
-    4. Groq Cloud token-by-token synthesis stream
-    5. Final structured report emission with Instructor Pydantic validation
+    4. Optional Type-safe Data Analyst execution (if tabular data supplied)
+    5. Groq Cloud token-by-token synthesis stream
+    6. Final structured report emission with Instructor Pydantic validation
     """
     start_time = time.time()
     traces: List[ReActStep] = []
@@ -100,6 +108,15 @@ async def stream_research_agent(query: str, depth: str = "react") -> AsyncGenera
             search_args=WebSearchArgs(query=query, max_results=5),
             scrape_required=True,
             scrape_max_chars=1200,
+        )
+
+    # Attach type-safe data analyst args if tabular CSV payload was provided
+    if csv_data:
+        decision.data_analyst_required = True
+        decision.data_analyst_args = DataAnalystArgs(
+            prompt=query,
+            csv_data=csv_data,
+            dataset_name="inquiry_data.csv"
         )
 
     step1 = ReActStep(
@@ -170,6 +187,30 @@ async def stream_research_agent(query: str, depth: str = "react") -> AsyncGenera
             "url": scrape_args.url,
             "status": "extracted"
         })
+
+    # --- Stage 2.5: Optional Type-Safe Data Analyst Invocation ---
+    if decision.data_analyst_required and decision.data_analyst_args:
+        step_analyst = ReActStep(
+            step=len(traces) + 1,
+            thought=f"Empirical dataset supplied. Invoking Data Analyst via Instructor type-safe DataAnalystArgs to profile distributions, detect IsolationForest anomalies, and generate verified KPIs.",
+            action=f"Execute Data Analyst tool for dataset '{decision.data_analyst_args.dataset_name}'",
+            observation=""
+        )
+        yield sse_event("thought", step_analyst.model_dump())
+        yield sse_event("tool_start", {"tool": "data_analyst", "dataset_name": decision.data_analyst_args.dataset_name})
+
+        try:
+            analyst_plan = await dispatch_tool_call("data_analyst", decision.data_analyst_args)
+            step_analyst.observation = f"Analysis complete: Generated {len(analyst_plan.kpis)} verified KPIs and {len(analyst_plan.visuals)} visual charts."
+            scraped_context += f"\nDataset Analysis Summary [{decision.data_analyst_args.dataset_name}]:\n{analyst_plan.summary}\n"
+            for k in analyst_plan.kpis[:4]:
+                scraped_context += f"- {k.title}: {k.value} ({k.change or ''}) | {k.executive_takeaway or k.rationale}\n"
+        except Exception as e:
+            step_analyst.observation = f"Data Analyst tool notice: {e}"
+            logger.warning(f"Data analyst tool execution notice: {e}")
+
+        traces.append(step_analyst)
+        yield sse_event("tool_end", {"tool": "data_analyst", "status": "completed"})
 
     # Append snippets from remaining sources
     for s in discovered_sources[1:4]:
