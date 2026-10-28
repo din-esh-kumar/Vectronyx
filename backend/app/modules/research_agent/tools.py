@@ -1,10 +1,15 @@
 # backend/app/modules/research_agent/tools.py
 import logging
 import urllib.parse
-from typing import List
+from typing import List, Union, Any
 import httpx
 import trafilatura
-from app.modules.research_agent.schemas import ResearchSource
+from app.modules.research_agent.schemas import (
+    ResearchSource,
+    WebSearchArgs,
+    WebScrapeArgs,
+    DataAnalystArgs,
+)
 
 logger = logging.getLogger("vectronyx.research_tools")
 
@@ -101,3 +106,42 @@ async def scrape_page(url: str, max_chars: int = 1500) -> str:
         logger.debug(f"Trafilatura extraction failed for {url}: {e}")
 
     return ""
+
+
+# ============================================================
+# Type-Safe Tool Executors (Strict Pydantic Model Enforced)
+# ============================================================
+
+def execute_web_search(args: Union[WebSearchArgs, dict]) -> List[ResearchSource]:
+    """
+    Guarantees that arguments passed to the Web Search tool strictly adhere
+    to the WebSearchArgs Pydantic model.
+    """
+    if isinstance(args, dict):
+        args = WebSearchArgs.model_validate(args)
+    return search_web(query=args.query, max_results=args.max_results)
+
+
+async def execute_web_scrape(args: Union[WebScrapeArgs, dict]) -> str:
+    """
+    Guarantees that arguments passed to the Web Scraper tool strictly adhere
+    to the WebScrapeArgs Pydantic model.
+    """
+    if isinstance(args, dict):
+        args = WebScrapeArgs.model_validate(args)
+    return await scrape_page(url=args.url, max_chars=args.max_chars)
+
+
+async def execute_data_analyst(args: Union[DataAnalystArgs, dict]) -> Any:
+    """
+    Guarantees that arguments passed to the Intelligent Data Analyst strictly
+    adhere to the DataAnalystArgs Pydantic model.
+    """
+    from app.modules.data_analyst.analyst import generate_complete_dashboard
+    if isinstance(args, dict):
+        args = DataAnalystArgs.model_validate(args)
+    return await generate_complete_dashboard(
+        csv_text=args.csv_data,
+        user_prompt=args.prompt,
+        dataset_name=args.dataset_name or "dataset.csv"
+    )

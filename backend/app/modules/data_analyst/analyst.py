@@ -10,6 +10,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.sse import sse_event
+from app.services.llm.instructor_client import generate_structured
 from app.modules.data_analyst.schemas import (
     ColumnMetric,
     DatasetProfile,
@@ -432,63 +433,25 @@ in
     )
 
 
-async def call_llm_dashboard_planner(schema_summary: str, row_count: int, user_prompt: str, dataset_name: str) -> Optional[Dict[str, Any]]:
+async def call_llm_dashboard_planner(schema_summary: str, row_count: int, user_prompt: str, dataset_name: str) -> Optional[DashboardPlan]:
     """
-    Invokes Google Gemini 2.0 / Groq Cloud to synthesize a structured JSON Dashboard Plan.
+    Invokes Instructor (wrapping Google Gemini / Groq Cloud) to synthesize a guaranteed
+    type-safe DashboardPlan Pydantic model with automatic self-correcting retries.
+    Eliminates manual markdown/JSON parsing errors.
     """
     user_content = build_dashboard_user_prompt(dataset_name, schema_summary, row_count, user_prompt)
-    
-    # 1. Try Google Gemini API
-    gemini_key = settings.GEMINI_API_KEY
-    if gemini_key:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-            payload = {
-                "system_instruction": {"parts": [{"text": DASHBOARD_PLANNER_SYSTEM_PROMPT}]},
-                "contents": [{"parts": [{"text": user_content}]}],
-                "generationConfig": {"temperature": 0.2, "response_mime_type": "application/json"}
-            }
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        text_resp = candidates[0]["content"]["parts"][0]["text"].strip()
-                        if text_resp.startswith("```json"):
-                            text_resp = text_resp[7:]
-                        if text_resp.endswith("```"):
-                            text_resp = text_resp[:-3]
-                        return json.loads(text_resp.strip())
-        except Exception as e:
-            logger.warning(f"Gemini API generation failed: {e}")
-
-    # 2. Try Groq Cloud (Llama 3.3 70B)
-    groq_key = settings.GROQ_API_KEY
-    if groq_key:
-        try:
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
-            groq_model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
-            payload = {
-                "model": groq_model,
-                "messages": [
-                    {"role": "system", "content": DASHBOARD_PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"}
-            }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, json=payload, headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    content = data["choices"][0]["message"]["content"]
-                    return json.loads(content)
-        except Exception as e:
-            logger.warning(f"Groq API generation failed: {e}")
-
-    return None
+    try:
+        plan = await generate_structured(
+            response_model=DashboardPlan,
+            system_prompt=DASHBOARD_PLANNER_SYSTEM_PROMPT,
+            user_prompt=user_content,
+            max_retries=3,
+            temperature=0.2,
+        )
+        return plan
+    except Exception as e:
+        logger.warning(f"Instructor structured dashboard planning failed: {e}")
+        return None
 
 
 def compute_visual_series_data(df: pd.DataFrame, visual: ChartVisualSpec) -> List[Dict[str, Any]]:
@@ -655,22 +618,18 @@ async def generate_complete_dashboard(csv_text: str, user_prompt: str, dataset_n
     
     schema_summary = "\n".join(schema_lines)
 
-    # Call LLM
-    llm_plan_dict = await call_llm_dashboard_planner(schema_summary, profile.row_count, user_prompt, dataset_name)
+    # Call LLM via Instructor Structured Outputs
+    plan = await call_llm_dashboard_planner(schema_summary, profile.row_count, user_prompt, dataset_name)
     
-    if llm_plan_dict:
-        try:
-            plan = DashboardPlan(**llm_plan_dict)
-            plan.dataset_name = dataset_name
-            # Ensure econometric diagnostics and concentration are merged into dossier
-            if plan.dossier:
-                plan.dossier.statistical_diagnostics = diagnostics
-                plan.dossier.concentration_risk = concentration
-                plan.dossier.data_integrity_score = profile.data_integrity_score
-        except Exception as e:
-            logger.warning(f"Error parsing LLM plan: {e}, falling back to veteran heuristic plan")
-            plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
+    if plan is not None:
+        plan.dataset_name = dataset_name
+        # Ensure econometric diagnostics and concentration are merged into dossier
+        if plan.dossier:
+            plan.dossier.statistical_diagnostics = diagnostics
+            plan.dossier.concentration_risk = concentration
+            plan.dossier.data_integrity_score = profile.data_integrity_score
     else:
+        logger.info("Falling back to veteran heuristic dashboard plan")
         plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
 
     # Attach computed series data for each visual
@@ -721,23 +680,19 @@ async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, da
     yield sse_event("status", {
         "step": 3,
         "stage": "llm_synthesis",
-        "message": f"Step 3/4: Groq Cloud LPU synthesizing C-Suite KPIs, Power BI DAX, and Tableau formulas..."
+        "message": "Step 3/4: Instructor structured synthesis generating verified C-Suite KPIs, Power BI DAX, and Tableau formulas..."
     })
 
-    llm_plan_dict = await call_llm_dashboard_planner(schema_summary, profile.row_count, user_prompt, dataset_name)
+    plan = await call_llm_dashboard_planner(schema_summary, profile.row_count, user_prompt, dataset_name)
     
-    if llm_plan_dict:
-        try:
-            plan = DashboardPlan(**llm_plan_dict)
-            plan.dataset_name = dataset_name
-            if plan.dossier:
-                plan.dossier.statistical_diagnostics = diagnostics
-                plan.dossier.concentration_risk = concentration
-                plan.dossier.data_integrity_score = profile.data_integrity_score
-        except Exception as e:
-            logger.warning(f"Error parsing LLM plan: {e}, falling back to veteran heuristic plan")
-            plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
+    if plan is not None:
+        plan.dataset_name = dataset_name
+        if plan.dossier:
+            plan.dossier.statistical_diagnostics = diagnostics
+            plan.dossier.concentration_risk = concentration
+            plan.dossier.data_integrity_score = profile.data_integrity_score
     else:
+        logger.info("Falling back to veteran heuristic dashboard plan")
         plan = _heuristic_fallback_dashboard(df, user_prompt, dataset_name)
 
     yield sse_event("status", {

@@ -136,3 +136,13 @@ Vectronyx utilizes a 100% cloud-native inference architecture combining massive 
 - **Strengths**: Near-instantaneous response generation (~250 tokens/sec) on specialized LPUs, ideal for natural language Q&A and fast tool iterations.
 - **Configuration**: Set `LLM_PROVIDER=groq` and supply `GROQ_API_KEY`.
 
+
+### 4.3 Instructor Structured Outputs & Type-Safe Tool Invocations (`backend/app/services/llm/instructor_client.py`)
+Vectronyx uses **[Instructor](https://github.com/jxnl/instructor)** to wrap Groq Cloud and Google Gemini clients with automatic Pydantic validation:
+- **Zero JSON Parsing Errors**: Eliminates manual markdown stripping (```json ... ```) and `json.loads` fragility. If the LLM generates an invalid schema, Instructor automatically re-prompts the model with self-correcting validation feedback (`max_retries=3`).
+- **Resilient Multi-Provider Failover**: Automatically executes with the primary configured provider (`settings.LLM_PROVIDER`) and seamlessly fails over to the secondary provider if rate limits, outages, or 503s occur.
+- **Type-Safe Agent Tool Calls**: Strictly enforces Pydantic schemas for external agent interactions:
+  - `WebSearchArgs`: Enforces query string and bounded `max_results` (1–10).
+  - `WebScrapeArgs`: Enforces valid HTTP/HTTPS URLs with SSRF protection and bounded `max_chars`.
+  - `DataAnalystArgs`: Guarantees dataset payload and analysis prompt integrity.
+  - `DashboardPlan`: Returns fully typed C-Suite KPIs, Power BI DAX, Tableau formulas, and McKinsey-style Executive Dossiers.
