@@ -1,12 +1,13 @@
 import os
-from dotenv import load_dotenv
 from supabase import create_client
+from app.core.config import settings
 
-# Ensure the backend .env is loaded even when uvicorn imports modules directly.
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+SUPABASE_URL = settings.SUPABASE_URL
+SUPABASE_KEY = (
+    settings.SUPABASE_SERVICE_ROLE_KEY
+    or settings.SUPABASE_KEY
+    or settings.SUPABASE_PUBLISHABLE_KEY
+)
 
 missing = [
     name

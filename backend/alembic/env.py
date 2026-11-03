@@ -3,10 +3,15 @@ from logging.config import fileConfig
 from sqlalchemy import create_engine, text
 from alembic import context
 import os, sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load env
-load_dotenv()
+# Load env from single root .env
+root_env = Path(__file__).resolve().parents[2] / ".env"
+if root_env.is_file():
+    load_dotenv(dotenv_path=root_env, override=True)
+else:
+    load_dotenv()
 
 # Fix import path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -30,7 +35,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 print("🔥 ALEMBIC USING DB:", DATABASE_URL)
 
 # Fix % issue
-config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+if DATABASE_URL:
+    config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 
 def run_migrations_online():

@@ -1,9 +1,17 @@
 # backend/app/core/config.py
 import os
+from pathlib import Path
 from typing import List
+
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
+    from dotenv import load_dotenv, find_dotenv
+    # Resolve root directory: config.py is in backend/app/core/ (4 levels up)
+    root_env = Path(__file__).resolve().parents[3] / ".env"
+    if root_env.is_file():
+        load_dotenv(dotenv_path=root_env, override=True)
+    else:
+        # Fallback to search up directory tree
+        load_dotenv(find_dotenv(usecwd=True), override=True)
 except ImportError:
     pass
 
@@ -19,6 +27,7 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_PUBLISHABLE_KEY: str = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
     SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET", "datasets")
 
@@ -38,16 +47,25 @@ class Settings:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
+    # Ollama
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
+
     # Vector Store & Embeddings (Zero PyTorch: Gemini Cloud + FastEmbed ONNX)
-    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "auto")  # "auto", "gemini", "fastembed"
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "auto")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
     FASTEMBED_MODEL: str = os.getenv("FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5")
+    VECTOR_STORE_PATH: str = os.getenv("VECTOR_STORE_PATH", "./vector_store")
     VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "supabase_pgvector")
     VECTOR_DIMENSION: int = int(os.getenv("VECTOR_DIMENSION", "768"))
+
+    # Research Agent
+    MAX_SEARCH_RESULTS: int = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
+    MAX_SCRAPE_DEPTH: int = int(os.getenv("MAX_SCRAPE_DEPTH", "2"))
 
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
     ]
 
-settings = Settings()
+settings = Settings()
