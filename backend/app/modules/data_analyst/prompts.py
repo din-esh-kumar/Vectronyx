@@ -102,21 +102,44 @@ Output JSON Specification:
 }
 
 Analytical Standards:
-1. Provide 4 high-impact KPIs with benchmarks, variances, and executive takeaways.
-2. Provide between 3 to 5 visual charts matching exact dataset columns. Supported chart types: "bar", "line", "area", "pie", "scatter".
-3. The Executive Dossier MUST read with uncompromised intellectual authority: rigorous economics, precise operational terminology, and clear capital allocation implications.
+1. Provide 4 high-impact KPIs with benchmarks, variances, and executive takeaways. When verified ground-truth figures are provided in the prompt, use those exact numbers for KPI values, variances, and rationale.
+2. Provide between 3 to 5 visual charts directly targeting the metrics and dimensions identified in the user mandate. Supported chart types: "bar", "line", "area", "pie", "scatter". Always use exact dataset column names for x_axis and y_axis.
+3. The Executive Dossier MUST read with uncompromised intellectual authority: rigorous economics, precise operational terminology, and clear capital allocation implications directly answering the user mandate.
 4. Ensure all DAX and Tableau formulas are syntactically valid.
 """
 
-def build_dashboard_user_prompt(dataset_name: str, schema_summary: str, row_count: int, user_prompt: str) -> str:
-    return f"""DATASET NAME: {dataset_name}
+def build_dashboard_user_prompt(
+    dataset_name: str,
+    schema_summary: str,
+    row_count: int,
+    user_prompt: str,
+    ground_truth_summary: str = "",
+    target_focus: str = "",
+) -> str:
+    prompt_body = f"""DATASET NAME: {dataset_name}
 TOTAL OBSERVATIONS: {row_count}
 
 DATASET SCHEMA, STATISTICAL DISTRIBUTIONS & ECONOMETRIC DIAGNOSTICS:
 {schema_summary}
-
+"""
+    if target_focus:
+        prompt_body += f"""
+RESOLVED TARGET DIMENSIONS & ANALYTICAL INTENT:
+{target_focus}
+"""
+    if ground_truth_summary:
+        prompt_body += f"""
+VERIFIED GROUND-TRUTH EMPIRICAL COMPUTATIONS:
+{ground_truth_summary}
+"""
+    prompt_body += f"""
 EXECUTIVE INQUIRY & STRATEGIC MANDATE:
 "{user_prompt}"
 
-Synthesize this data into the 30-Year Veteran Executive Intelligence Dossier and Dashboard Specification JSON.
+INSTRUCTIONS:
+1. Ground every KPI value, variance, and takeaway directly in the VERIFIED GROUND-TRUTH COMPUTATIONS above whenever applicable. Do NOT invent unrelated numbers.
+2. Prioritize visual charts that specifically isolate the metrics and cohorts specified in the EXECUTIVE INQUIRY.
+3. In the Executive Dossier (Verdict, Situation, Complication, Resolution), directly solve the strategic dilemma and operational headwinds raised in the mandate.
+4. Synthesize this data into the 30-Year Veteran Executive Intelligence Dossier and Dashboard Specification JSON.
 """
+    return prompt_body

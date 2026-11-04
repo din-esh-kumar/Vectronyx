@@ -109,6 +109,9 @@ class DashboardPlan(BaseModel):
     dax_script: str = ""
     powerquery_m: str = ""
     tableau_calculated_fields: List[Dict[str, str]] = []
+    focused_metrics: List[str] = []
+    focused_dimensions: List[str] = []
+    analytical_intent: Optional[str] = None
 
 class DashboardGenerateRequest(BaseModel):
     prompt: str = Field(..., description="User prompt describing analysis or dashboard requirements")

@@ -43,7 +43,7 @@ import {
 import toast from "react-hot-toast";
 import { fetchEventStream } from "../../lib/sse";
 
-const API_BASE = "http://localhost:8000/api/analyst";
+const API_BASE = `${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/api/analyst`;
 
 // Curated enterprise dataset for instant evaluation
 const SAMPLE_SAAS_CSV = `Region,Category,Revenue,Profit,Transactions,ChurnRate
@@ -163,6 +163,9 @@ interface DashboardPlan {
   dax_script: string;
   powerquery_m: string;
   tableau_calculated_fields: Array<{ caption: string; formula: string }>;
+  focused_metrics?: string[];
+  focused_dimensions?: string[];
+  analytical_intent?: string;
 }
 
 // Signature Violet + Warm Roasted Bronze / Amber Palette
@@ -422,6 +425,9 @@ in
       { caption: "Is High Churn Risk", formula: "IF [ChurnRate] > 0.08 THEN 'At Risk' ELSE 'Healthy' END" },
       { caption: "Revenue per Transaction", formula: "SUM([Revenue]) / SUM([Transactions])" },
     ],
+    focused_metrics: ["Revenue", "Profit", "ChurnRate"],
+    focused_dimensions: ["Region", "Category"],
+    analytical_intent: "risk_and_churn",
   };
 }
 
@@ -649,6 +655,9 @@ in
       { caption: "Is High Risk Corridor", formula: "IF [ChargebackRate] > 0.005 THEN 'Critical Risk' ELSE 'Normal' END" },
       { caption: "Fee per Transaction", formula: "SUM([NetFee]) / SUM([Transactions])" },
     ],
+    focused_metrics: ["GrossVolume", "NetFee", "ChargebackRate"],
+    focused_dimensions: ["Corridor", "PaymentType"],
+    analytical_intent: "unit_economics",
   };
 }
 
@@ -664,6 +673,36 @@ export default function DataAnalyst() {
   const [activeTab, setActiveTab] = useState<"dossier" | "visuals" | "bi">("dossier");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+
+  // Extract column headers dynamically from csvContent
+  const detectedColumns = React.useMemo(() => {
+    if (!csvContent) return [];
+    const firstLine = csvContent.trim().split("\n")[0] || "";
+    return firstLine.split(",").map(c => c.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }, [csvContent]);
+
+  // Generate dynamic dataset-aware prompt suggestions
+  const dynamicPromptChips = React.useMemo(() => {
+    if (detectedColumns.length === 0) {
+      return [
+        "C-Suite Capital Allocation & Unit Margin Forensics",
+        "Portfolio Concentration, HHI & Volatility Skew",
+        "Customer Churn Risk & IsolationForest Outliers",
+      ];
+    }
+    const numerics = detectedColumns.filter(c => /rev|profit|sales|churn|fee|cost|rate|volume|transaction|margin|score|amount|chargeback|days/i.test(c));
+    const cats = detectedColumns.filter(c => /region|corridor|country|category|segment|tier|type|market|user|customer|product/i.test(c));
+
+    const primaryNum = numerics[0] || detectedColumns[1] || "Performance";
+    const secNum = numerics[1] || detectedColumns[2] || "Efficiency";
+    const primaryCat = cats[0] || detectedColumns[0] || "Cohort";
+
+    return [
+      `Evaluate ${primaryNum} and ${secNum} unit economics across ${primaryCat}`,
+      `Conduct concentration risk & HHI volatility audit on ${primaryCat} by ${primaryNum}`,
+      `Diagnose tail-risk leakage, outlier forensics, and P0 remediation for ${primaryNum}`,
+    ];
+  }, [detectedColumns]);
 
   // Load SaaS sample dataset
   const handleLoadSample = () => {
@@ -744,6 +783,20 @@ export default function DataAnalyst() {
         );
       } catch (streamErr) {
         console.warn("Falling back to standard REST / simulated evaluation:", streamErr);
+      }
+
+      if (!receivedPlan) {
+        try {
+          const restRes = await fetch(`${API_BASE}/generate-dashboard`, {
+            method: "POST",
+            body: formData,
+          });
+          if (restRes.ok) {
+            receivedPlan = await restRes.json();
+          }
+        } catch (restErr) {
+          console.warn("REST endpoint attempt error:", restErr);
+        }
       }
 
       if (!receivedPlan) {
@@ -1008,11 +1061,7 @@ export default function DataAnalyst() {
 
             {/* Strategic Quick Presets */}
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {[
-                "C-Suite Capital Allocation & Unit Margin Forensics",
-                "Portfolio Concentration, HHI & Volatility Skew",
-                "Customer Churn Risk & IsolationForest Outliers",
-              ].map((chip) => (
+              {dynamicPromptChips.map((chip) => (
                 <button
                   key={chip}
                   onClick={() => setUserPrompt(chip)}
@@ -1161,6 +1210,41 @@ export default function DataAnalyst() {
           {/* TAB 1: C-SUITE STRATEGIC DOSSIER */}
           {activeTab === "dossier" && dossier && (
             <div className="space-y-6">
+              {/* Prompt Alignment Badge */}
+              {dashboard && (dashboard.focused_metrics?.length || dashboard.analytical_intent) && (
+                <div className="flex flex-wrap items-center gap-2 p-3.5 rounded-xl bg-violet-950/40 border border-violet-500/25 text-xs">
+                  <div className="flex items-center gap-1.5 text-amber-300 font-mono font-medium">
+                    <Target className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Prompt-Conditioned Focus:</span>
+                  </div>
+                  {dashboard.analytical_intent && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase font-mono text-[10px]">
+                      {dashboard.analytical_intent.replace(/_/g, " ")}
+                    </span>
+                  )}
+                  {dashboard.focused_metrics && dashboard.focused_metrics.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-violet-300">
+                      <span className="text-violet-400/70">Target Metrics:</span>
+                      {dashboard.focused_metrics.map(m => (
+                        <span key={m} className="px-2 py-0.5 rounded bg-violet-800/40 text-violet-200 border border-violet-500/25 font-mono text-[11px]">
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {dashboard.focused_dimensions && dashboard.focused_dimensions.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-violet-300">
+                      <span className="text-violet-400/70">Cohorts:</span>
+                      {dashboard.focused_dimensions.map(d => (
+                        <span key={d} className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-500/25 font-mono text-[11px]">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Boardroom Executive Verdict */}
               <div className="rounded-2xl p-6 glass-card-bronze border border-amber-500/30">
                 <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-widest mb-1.5 font-mono">
