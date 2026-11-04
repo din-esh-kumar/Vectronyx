@@ -145,7 +145,7 @@ cd frontend
 corepack enable
 corepack prepare pnpm@9.12.2 --activate
 
-# Install npm dependencies
+# Install frontend dependencies using pnpm
 pnpm install
 
 # Start Vite dev server
@@ -184,4 +184,4 @@ Run these quick checks to ensure everything is operating smoothly:
 | **Supabase Client Initialisation Failure** | Missing or invalid `SUPABASE_URL` or keys in `.env`. | Verify keys in `backend/.env` and `frontend/.env`. Ensure you use the **anon/publishable** key in frontend and **service_role** key in backend. |
 | **FAISS installation error on Windows** | Missing C++ build tools for native compilation. | Use `pip install faiss-cpu==1.8.0` with pre-compiled wheels. |
 | **CORS blocked by browser** | Origin `http://localhost:5173` is not allowed. | Ensure `ALLOWED_ORIGINS` in `backend/.env` contains `http://localhost:5173` and backend CORS middleware is configured. |
-| **`pnpm` command not found** | Node.js `corepack` is not enabled. | Run `npm install -g pnpm` or `corepack enable`. |
+| **`pnpm` command not found** | Node.js `corepack` is not enabled. | Run `corepack enable` or install via `pnpm` standalone installer. |

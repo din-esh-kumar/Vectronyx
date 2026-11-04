@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Vectronyx AI Workbench Workspace",
+  "packageManager": "pnpm@9.12.2",
   "scripts": {
+    "preinstall": "npx --yes only-allow pnpm",
     "dev": "pnpm --dir frontend run dev",
     "dev:frontend": "pnpm --dir frontend run dev",
     "dev:backend": "cd backend && .venv\\Scripts\\uvicorn app.main:app --reload --port 8000",

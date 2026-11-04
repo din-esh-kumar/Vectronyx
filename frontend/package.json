@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.12.2",
   "scripts": {
+    "preinstall": "npx --yes only-allow pnpm",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

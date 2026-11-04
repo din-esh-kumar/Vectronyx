@@ -6,3 +6,5 @@ __pycache__/
 dist/
 .agents/
 package-lock.json
+npm-debug.log*
+yarn.lock
