@@ -316,6 +316,7 @@ For exhaustive technical guides, explore the [`docs/`](./docs/README.md) directo
 - 📡 [**API & GraphQL Reference**](./docs/API_REFERENCE.md) — Complete GraphQL query/mutation and REST specs.
 - 🗄️ [**Database & Vector Store Schema**](./docs/DATABASE_SCHEMA.md) — Relational models, Alembic migrations, and FAISS.
 - 🎨 [**Frontend Architecture Guide**](./docs/FRONTEND_GUIDE.md) — React 18, Tailwind v4, navigation, and auth state.
+- 🚀 [**Production Deployment Guide**](./docs/DEPLOYMENT.md) — Render, Vercel, Railway, Cloud Run, and Docker Compose deployment instructions.
 - 🗺️ [**Development Roadmap**](./docs/ROADMAP.md) — Feature status, milestones, and contribution standards.
 - 📜 [**Code of Conduct**](./CODE_OF_CONDUCT.md) — Contributor Covenant v2.1, AI ethics, and responsible agentic standards.
 

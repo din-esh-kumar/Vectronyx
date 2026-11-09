@@ -15,6 +15,7 @@ Welcome to the official technical documentation for **Vectronyx AI Workbench**. 
 | [**API Reference**](./API_REFERENCE.md) | GraphQL schema, Strawberry resolvers, REST endpoints, request/response payloads, and authentication. | Full-Stack & API Developers |
 | [**Database & Vector Store Schema**](./DATABASE_SCHEMA.md) | PostgreSQL / Supabase relational models, SQLAlchemy ORM, Alembic migrations, and pgvector indexing. | Backend & Database Engineers |
 | [**Frontend Guide**](./FRONTEND_GUIDE.md) | React 18, Vite, TypeScript, Tailwind CSS v4, responsive layout (Desktop + Mobile drawer), and Apollo/Supabase integration. | Frontend Developers |
+| [**Deployment Guide**](./DEPLOYMENT.md) | Multi-target deployment manual: Render, Vercel, Railway, Cloud Run, Docker Compose. | DevOps & Platform Engineers |
 | [**Development Roadmap**](./ROADMAP.md) | Implementation matrix, release milestones (v0.1.0 to v1.0.0), and contribution standards. | Project Planners & Contributors |
 | [**Code of Conduct**](../CODE_OF_CONDUCT.md) | Community pledge, acceptable behaviors, responsible AI ethics, and incident escalation protocols. | Entire Community |
 
