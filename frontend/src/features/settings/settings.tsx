@@ -33,12 +33,12 @@ export default function WorkbenchSettings() {
   const [hnswM, setHnswM] = useState(savedConfig.hnswM ?? 16);
   const [hnswEf, setHnswEf] = useState(savedConfig.hnswEf ?? 64);
 
-  // API Keys with masking
-  const [geminiKey, setGeminiKey] = useState(savedConfig.geminiKey || import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyCSq2-HjwhlxbDvpq5F5P4sCBGWKO45Ot4");
+  // API Keys with masking (optional browser overrides; primary keys stay server-side)
+  const [geminiKey, setGeminiKey] = useState(savedConfig.geminiKey || "");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [groqKey, setGroqKey] = useState(savedConfig.groqKey || import.meta.env.VITE_GROQ_API_KEY || "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");
+  const [groqKey, setGroqKey] = useState(savedConfig.groqKey || "");
   const [showGroqKey, setShowGroqKey] = useState(false);
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(savedConfig.supabaseAnonKey || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_h0V9Fdu4tco1OMFBTjYZCA_gUadjdQM");
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(savedConfig.supabaseAnonKey || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "");
   const [showSupabaseKey, setShowSupabaseKey] = useState(false);
 
   const [testingConnection, setTestingConnection] = useState(false);
@@ -381,6 +381,7 @@ export default function WorkbenchSettings() {
                     type={showGeminiKey ? "text" : "password"}
                     value={geminiKey}
                     onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="Managed securely on backend (optional local override)"
                     className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-violet-950/50 border border-violet-500/25 text-xs text-white font-mono focus-vb"
                   />
                   <button
@@ -402,6 +403,7 @@ export default function WorkbenchSettings() {
                     type={showGroqKey ? "text" : "password"}
                     value={groqKey}
                     onChange={(e) => setGroqKey(e.target.value)}
+                    placeholder="Managed securely on backend (optional local override)"
                     className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-violet-950/50 border border-violet-500/25 text-xs text-white font-mono focus-vb"
                   />
                   <button
@@ -423,6 +425,7 @@ export default function WorkbenchSettings() {
                     type={showSupabaseKey ? "text" : "password"}
                     value={supabaseAnonKey}
                     onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                    placeholder="Configured via VITE_SUPABASE_PUBLISHABLE_KEY"
                     className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-violet-950/50 border border-violet-500/25 text-xs text-white font-mono focus-vb"
                   />
                   <button

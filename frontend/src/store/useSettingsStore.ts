@@ -93,9 +93,9 @@ export const useSettingsStore = create<SettingsStore>()(
     pgvectorIndex: saved.pgvectorIndex || DEFAULT_SETTINGS.pgvectorIndex,
     hnswM: saved.hnswM ?? DEFAULT_SETTINGS.hnswM,
     hnswEf: saved.hnswEf ?? DEFAULT_SETTINGS.hnswEf,
-    geminiKey: saved.geminiKey || env.VITE_GEMINI_API_KEY || DEFAULT_SETTINGS.geminiKey,
+    geminiKey: saved.geminiKey || DEFAULT_SETTINGS.geminiKey,
     showGeminiKey: false,
-    groqKey: saved.groqKey || env.VITE_GROQ_API_KEY || DEFAULT_SETTINGS.groqKey,
+    groqKey: saved.groqKey || DEFAULT_SETTINGS.groqKey,
     showGroqKey: false,
     supabaseAnonKey:
       saved.supabaseAnonKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SETTINGS.supabaseAnonKey,
