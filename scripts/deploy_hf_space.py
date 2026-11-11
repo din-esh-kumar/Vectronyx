@@ -54,7 +54,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy Vectronyx backend to Hugging Face Spaces")
     parser.add_argument(
         "--space-id",
-        help="Target HF Space ID (e.g. 'username/vectronyx-api'). Defaults to '<current-user>/vectronyx-api'.",
+        help="Target HF Space ID (e.g. 'din-esh-kumar/vectronyx-backend'). Defaults to '<current-user>/vectronyx-backend'.",
     )
     parser.add_argument(
         "--private",
@@ -76,7 +76,7 @@ def main() -> int:
     api = HfApi(token=token)
     who = api.whoami()
     username = who.get("name")
-    space_id = args.space_id or f"{username}/vectronyx-api"
+    space_id = args.space_id or f"{username}/vectronyx-backend"
 
     repo_root = Path(__file__).resolve().parent.parent
     backend_dir = repo_root / "backend"
@@ -153,3 +153,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
