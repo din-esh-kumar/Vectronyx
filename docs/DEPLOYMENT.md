@@ -8,7 +8,7 @@ This guide provides end-to-end instructions for deploying **Vectronyx AI Workben
 
 | Target Platform | Architecture | Free Tier Available? | Best For |
 | :--- | :--- | :--- | :--- |
-| **Hugging Face Spaces + Vercel** | Backend on HF Spaces (Docker), Frontend on Vercel Edge | ✅ Yes (Always-on 16GB RAM Space) | **Primary recommended architecture** |
+| **Hugging Face Spaces + Vercel** | Backend on HF Spaces (`space_app.py` Gradio/FastAPI mount), Frontend on Vercel Edge | ✅ Yes (Free HF Gradio Space + ZeroGPU) | **Primary recommended architecture** |
 | **Render + Vercel** | Backend on Render, Frontend on Vercel Edge | ✅ Yes | Alternative PaaS deployment |
 | **Railway** | Single or dual service from repo | ✅ Yes (Trial/Hobby) | Fast 1-click Git deployment |
 | **Docker Compose** | Multi-container with Nginx reverse proxy | Self-hosted | VPS, AWS EC2, DigitalOcean, Hetzner |
@@ -53,20 +53,24 @@ Ensure your cloud accounts and environment variables are ready:
 > [!IMPORTANT]
 > **Supabase IPv4 Note for Hugging Face Spaces:** HF Spaces containers only support outbound IPv4 networking. In Supabase **Connect → Session Pooler** (or Transaction Pooler), copy the IPv4 Pooler connection string (e.g., `aws-0-<region>.pooler.supabase.com:5432`) for `DATABASE_URL` instead of the direct `db.<ref>.supabase.co` hostname.
 
-### Step 1: Deploy Backend to Hugging Face Spaces (Docker SDK)
+### Step 1: Deploy Backend to Hugging Face Spaces
+
+> [!NOTE]
+> Free Hugging Face accounts cannot create `cpu-basic` Docker Spaces (`402 Payment Required`). Therefore, the HF Space deployment runs [`backend/space_app.py`](../backend/space_app.py) using `sdk: gradio` (mounting the full FastAPI API at `/`, `/health`, `/auth/*`, `/api/*`, and Gradio at `/ui`), while keeping [`backend/Dockerfile`](../backend/Dockerfile) for Docker/Render/Cloud Run deployments.
 
 #### A. Instant CLI Deploy (Recommended)
 1. Log in with the Hugging Face CLI:
    ```bash
    hf auth login
    ```
-2. Run the deployment script from the repository root (creates a Docker Space on port `7860`, uploads `backend/`, and optionally syncs secrets from `.env`):
+2. Run the deployment script from the repository root (targets the HF Gradio Space, uploads `backend/` without `Dockerfile`, and optionally syncs secrets from `.env`):
    ```bash
-   python scripts/deploy_hf_space.py --space-id <your-hf-username>/vectronyx-api --sync-env
+   python scripts/deploy_hf_space.py --space-id <your-hf-username>/vectronyx-backend --sync-env
    ```
+   *(Pass `--sdk docker` if deploying to an HF Pro `cpu-basic` Docker Space.)*
 3. Your backend builds automatically and goes live at:
-   `https://<your-hf-username>-vectronyx-api.hf.space`
-   Verify health at `https://<your-hf-username>-vectronyx-api.hf.space/health`.
+   `https://<your-hf-username>-vectronyx-backend.hf.space`
+   Verify health at `https://<your-hf-username>-vectronyx-backend.hf.space/health`.
 
 #### B. Automatic GitHub Actions Sync
 1. In your GitHub repo **Settings → Secrets and variables → Actions**:
@@ -80,7 +84,7 @@ Ensure your cloud accounts and environment variables are ready:
 2. Import your `Vectronyx` GitHub repository.
 3. Vercel automatically detects [`vercel.json`](../vercel.json) (or [`frontend/vercel.json`](../frontend/vercel.json) if you set **Root Directory** to `frontend`).
 4. Add Environment Variables in Vercel Project Settings:
-   - `VITE_API_URL` = `https://<your-hf-username>-vectronyx-api.hf.space`
+   - `VITE_API_URL` = `https://<your-hf-username>-vectronyx-backend.hf.space`
    - `VITE_SUPABASE_URL` = `https://your-project.supabase.co`
    - `VITE_SUPABASE_PUBLISHABLE_KEY` = `sb_publishable_...`
    - `VITE_GEMINI_MODEL` = `gemini-3.5-flash-lite`

@@ -42,7 +42,7 @@ jobs:
           api.create_repo(
               repo_id=space_id,
               repo_type='space',
-              space_sdk='docker',
+              space_sdk='gradio',
               exist_ok=True,
           )
           api.upload_folder(
@@ -51,6 +51,8 @@ jobs:
               repo_type='space',
               commit_message='Deploy Vectronyx backend from GitHub Actions',
               ignore_patterns=[
+                  'Dockerfile',
+                  '.dockerignore',
                   '**/__pycache__/**',
                   '**/__pycache__',
                   '**/*.pyc',

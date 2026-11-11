@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Deploy Vectronyx FastAPI backend to Hugging Face Spaces (Docker SDK).
+Deploy Vectronyx FastAPI backend to Hugging Face Spaces (Gradio + FastAPI mount or Docker SDK).
 
 Usage:
-    python scripts/deploy_hf_space.py --space-id <hf-user>/vectronyx-api [--sync-env]
+    python scripts/deploy_hf_space.py --space-id <hf-user>/vectronyx-backend [--sync-env]
 """
 import argparse
 import os
@@ -57,6 +57,12 @@ def main() -> int:
         help="Target HF Space ID (e.g. 'din-esh-kumar/vectronyx-backend'). Defaults to '<current-user>/vectronyx-backend'.",
     )
     parser.add_argument(
+        "--sdk",
+        choices=("gradio", "docker"),
+        default="gradio",
+        help="Hugging Face Space SDK ('gradio' runs backend/space_app.py; 'docker' uses backend/Dockerfile).",
+    )
+    parser.add_argument(
         "--private",
         action="store_true",
         help="Create the Space as private (default: public so Vercel can reach it without HF token).",
@@ -80,15 +86,21 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parent.parent
     backend_dir = repo_root / "backend"
-    if not (backend_dir / "Dockerfile").is_file() or not (backend_dir / "README.md").is_file():
-        print("Error: backend/Dockerfile and backend/README.md are required for HF Docker Spaces.", file=sys.stderr)
+    if not (backend_dir / "README.md").is_file():
+        print("Error: backend/README.md is required for Hugging Face Spaces.", file=sys.stderr)
+        return 1
+    if args.sdk == "gradio" and not (backend_dir / "space_app.py").is_file():
+        print("Error: backend/space_app.py is required for HF Gradio Spaces.", file=sys.stderr)
+        return 1
+    if args.sdk == "docker" and not (backend_dir / "Dockerfile").is_file():
+        print("Error: backend/Dockerfile is required for HF Docker Spaces.", file=sys.stderr)
         return 1
 
-    print(f"Ensuring Hugging Face Docker Space exists: {space_id}")
+    print(f"Ensuring Hugging Face {args.sdk} Space exists: {space_id}")
     api.create_repo(
         repo_id=space_id,
         repo_type="space",
-        space_sdk="docker",
+        space_sdk=args.sdk,
         private=args.private,
         exist_ok=True,
     )
@@ -123,24 +135,28 @@ def main() -> int:
                     api.add_space_variable(repo_id=space_id, key=key, value=val)
                     print(f"  Synced variable: {key}={val}")
 
+    ignore_patterns = [
+        "**/__pycache__/**",
+        "**/__pycache__",
+        "**/*.pyc",
+        "**/*.pyo",
+        ".venv/**",
+        "venv/**",
+        ".pytest_cache/**",
+        "**/.pytest_cache/**",
+        "tests/**",
+        ".env*",
+    ]
+    if args.sdk == "gradio":
+        ignore_patterns.extend(["Dockerfile", ".dockerignore"])
+
     print(f"Uploading {backend_dir} to Space {space_id}...")
     api.upload_folder(
         folder_path=str(backend_dir),
         repo_id=space_id,
         repo_type="space",
         commit_message="Deploy Vectronyx backend to Hugging Face Space",
-        ignore_patterns=[
-            "**/__pycache__/**",
-            "**/__pycache__",
-            "**/*.pyc",
-            "**/*.pyo",
-            ".venv/**",
-            "venv/**",
-            ".pytest_cache/**",
-            "**/.pytest_cache/**",
-            "tests/**",
-            ".env*",
-        ],
+        ignore_patterns=ignore_patterns,
         delete_patterns=["*"],
     )
 
