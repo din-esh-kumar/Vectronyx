@@ -1,13 +1,13 @@
 ---
 title: Vectronyx AI Workbench API
 emoji: ⚡
-colorFrom: indigo
-colorTo: cyan
+colorFrom: blue
+colorTo: indigo
 sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: FastAPI + Gemini + Groq + pgvector backend for Vectronyx AI Workbench
+short_description: FastAPI AI Workbench API (Gemini + Groq + pgvector)
 ---
 
 # Vectronyx AI Workbench — Backend API (Hugging Face Space)
@@ -30,3 +30,4 @@ Configure the following in **Space Settings → Variables and secrets**:
 - `GEMINI_API_KEY`
 - `GROQ_API_KEY`
 - `SECRET_KEY`
+
