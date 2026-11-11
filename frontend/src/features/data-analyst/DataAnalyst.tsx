@@ -1,5 +1,6 @@
 // frontend/src/features/data-analyst/DataAnalyst.tsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -14,7 +15,6 @@ import {
   FileText,
   Layers,
   Printer,
-  Radio,
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
@@ -22,6 +22,7 @@ import {
   TrendingDown,
   TrendingUp,
   Upload,
+  X,
   Zap,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -120,21 +121,64 @@ const KpiScorecardGrid: React.FC<{ kpis: KPISpec[] }> = ({ kpis }) => {
   );
 };
 
+const DEFAULT_PROMPT =
+  "Comprehensive Principal Data Analyst audit: evaluate metric distributions, feature correlations, cohort variance drivers, anomaly forensics, and strategic ROI actions.";
+
 export default function DataAnalyst() {
-  const [csvContent, setCsvContent] = useState<string>(SAMPLE_SAAS_CSV);
-  const [fileName, setFileName] = useState<string>("saas_enterprise_q3.csv");
-  const [userPrompt, setUserPrompt] = useState<string>(
-    "Comprehensive Principal Data Analyst audit: evaluate metric distributions, feature correlations, cohort variance drivers, anomaly forensics, and strategic ROI actions."
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialSample = searchParams.get("sample");
+
+  const [csvContent, setCsvContent] = useState<string>(() =>
+    initialSample === "saas"
+      ? SAMPLE_SAAS_CSV
+      : initialSample === "fintech"
+      ? SAMPLE_FINTECH_CSV
+      : ""
+  );
+  const [fileName, setFileName] = useState<string>(() =>
+    initialSample === "saas"
+      ? "saas_enterprise_q3.csv"
+      : initialSample === "fintech"
+      ? "fintech_global_volume.csv"
+      : ""
+  );
+  const [userPrompt, setUserPrompt] = useState<string>(() =>
+    initialSample === "fintech"
+      ? "Cross-border FinTech liquidity audit: analyze corridor take-rates, settlement latency vs chargebacks, and anomaly tail risks."
+      : DEFAULT_PROMPT
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [streamingStatus, setStreamingStatus] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const [dashboard, setDashboard] = useState<DashboardPlan | null>(
-    getFallbackPlan("saas_enterprise_q3.csv")
+  const [dashboard, setDashboard] = useState<DashboardPlan | null>(() =>
+    initialSample === "saas"
+      ? getFallbackPlan("saas_enterprise_q3.csv")
+      : initialSample === "fintech"
+      ? getFintechPlan()
+      : null
   );
   const [activeTab, setActiveTab] = useState<"dossier" | "visuals" | "bi">("dossier");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sample = searchParams.get("sample");
+    if (sample === "saas") {
+      setCsvContent(SAMPLE_SAAS_CSV);
+      setFileName("saas_enterprise_q3.csv");
+      setDashboard(getFallbackPlan("saas_enterprise_q3.csv"));
+      setUserPrompt(DEFAULT_PROMPT);
+      setErrorMsg("");
+    } else if (sample === "fintech") {
+      setCsvContent(SAMPLE_FINTECH_CSV);
+      setFileName("fintech_global_volume.csv");
+      setDashboard(getFintechPlan());
+      setUserPrompt(
+        "Cross-border FinTech liquidity audit: analyze corridor take-rates, settlement latency vs chargebacks, and anomaly tail risks."
+      );
+      setErrorMsg("");
+    }
+  }, [searchParams]);
 
   // Semantic CSV header & column role inspection (quoted-CSV safe, excludes ID columns)
   const csvMeta = useMemo(() => inspectCsvMetadata(csvContent), [csvContent]);
@@ -167,11 +211,10 @@ export default function DataAnalyst() {
     setCsvContent(SAMPLE_SAAS_CSV);
     setFileName("saas_enterprise_q3.csv");
     setDashboard(getFallbackPlan("saas_enterprise_q3.csv"));
-    setUserPrompt(
-      "Comprehensive Principal Data Analyst audit: evaluate metric distributions, feature correlations, cohort variance drivers, anomaly forensics, and strategic ROI actions."
-    );
+    setUserPrompt(DEFAULT_PROMPT);
     setErrorMsg("");
-    toast.success("Loaded Enterprise SaaS dataset");
+    if (searchParams.has("sample")) setSearchParams({});
+    toast.success("Loaded Enterprise SaaS sample");
   };
 
   const handleLoadFintechSample = () => {
@@ -182,7 +225,18 @@ export default function DataAnalyst() {
       "Cross-border FinTech liquidity audit: analyze corridor take-rates, settlement latency vs chargebacks, and anomaly tail risks."
     );
     setErrorMsg("");
-    toast.success("Loaded Global FinTech dataset");
+    if (searchParams.has("sample")) setSearchParams({});
+    toast.success("Loaded FinTech liquidity sample");
+  };
+
+  const handleClearWorkspace = () => {
+    setCsvContent("");
+    setFileName("");
+    setDashboard(null);
+    setUserPrompt(DEFAULT_PROMPT);
+    setErrorMsg("");
+    setStreamingStatus("");
+    if (searchParams.has("sample")) setSearchParams({});
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,10 +248,13 @@ export default function DataAnalyst() {
     reader.onload = (event) => {
       const text = event.target?.result as string;
       setCsvContent(text);
+      setDashboard(null);
       setErrorMsg("");
+      if (searchParams.has("sample")) setSearchParams({});
       toast.success(`Loaded ${file.name}`);
     };
     reader.readAsText(file);
+    e.target.value = "";
   };
 
   const handleGenerateDashboard = async () => {
@@ -207,7 +264,7 @@ export default function DataAnalyst() {
       return;
     }
     setLoading(true);
-    setStreamingStatus("Initiating semantic role classification & econometric pipeline...");
+    setStreamingStatus("Initiating statistical profiling...");
     setErrorMsg("");
 
     try {
@@ -221,6 +278,7 @@ export default function DataAnalyst() {
       };
 
       let receivedPlan: DashboardPlan | null = null;
+      let lastError = "";
 
       try {
         await fetchEventStream(
@@ -238,12 +296,12 @@ export default function DataAnalyst() {
               receivedPlan = completedPlan;
             },
             onError: (err) => {
-              console.warn("SSE telemetry stream notice:", err.message);
+              lastError = err.message || "Streaming analysis interrupted";
             },
           }
         );
-      } catch (streamErr) {
-        console.warn("Falling back to standard REST / offline evaluation:", streamErr);
+      } catch (streamErr: any) {
+        lastError = streamErr?.message || "Streaming request failed";
       }
 
       if (!receivedPlan) {
@@ -255,22 +313,39 @@ export default function DataAnalyst() {
           const restContentType = restRes.headers.get("content-type") || "";
           if (restRes.ok && restContentType.includes("application/json")) {
             receivedPlan = await restRes.json();
+          } else {
+            lastError = `Backend returned HTTP ${restRes.status}`;
           }
-        } catch (restErr) {
-          console.warn("REST endpoint attempt error:", restErr);
+        } catch (restErr: any) {
+          lastError = restErr?.message || lastError || "Backend request failed";
         }
       }
 
       if (!receivedPlan) {
-        receivedPlan = getFallbackPlan(fileName || "saas_enterprise_q3.csv");
-        toast("Loaded offline simulated analytical report", { icon: "⚡" });
+        if (csvContent === SAMPLE_SAAS_CSV) {
+          receivedPlan = getFallbackPlan("saas_enterprise_q3.csv");
+          toast("Loaded offline SaaS sample report", { id: "analyst-toast" });
+        } else if (csvContent === SAMPLE_FINTECH_CSV) {
+          receivedPlan = getFintechPlan();
+          toast("Loaded offline FinTech sample report", { id: "analyst-toast" });
+        } else {
+          const msg =
+            lastError && lastError !== "Streaming analysis interrupted"
+              ? `Analysis failed (${lastError}). Verify the backend service is running and try again.`
+              : "Unable to generate report from backend API. Verify backend connectivity and try again.";
+          setErrorMsg(msg);
+          toast.error("Failed to generate report", { id: "analyst-toast" });
+          return;
+        }
+      } else {
+        toast.success("Analysis report ready", { id: "analyst-toast" });
       }
 
       setDashboard(receivedPlan);
       setActiveTab("dossier");
-      toast.success("Principal Data Analysis Report compiled!", { id: "analyst-toast" });
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to generate analysis report");
+      toast.error("Failed to generate report", { id: "analyst-toast" });
     } finally {
       setLoading(false);
       setStreamingStatus("");
@@ -323,12 +398,15 @@ export default function DataAnalyst() {
   };
 
   const handleExportPowerBI = async () => {
-    if (!dashboard) return;
+    if (!dashboard || !csvContent.trim()) {
+      toast.error("Dataset CSV required for Power BI export");
+      return;
+    }
     setDownloadingFormat("powerbi");
 
     const datasetFilename = dashboard.dataset_name || fileName || "dataset.csv";
     const filenameBase = sanitizePowerBiFilenameBase(datasetFilename);
-    const effectiveCsv = csvContent || SAMPLE_SAAS_CSV;
+    const effectiveCsv = csvContent;
 
     const triggerDownload = (blob: Blob, downloadName: string) => {
       const url = window.URL.createObjectURL(blob);
@@ -383,11 +461,14 @@ export default function DataAnalyst() {
   };
 
   const handleExportTableau = async () => {
-    if (!dashboard) return;
+    if (!dashboard || !csvContent.trim()) {
+      toast.error("Dataset CSV required for Tableau export");
+      return;
+    }
     setDownloadingFormat("tableau");
     const datasetFilename = dashboard.dataset_name || fileName || "dataset.csv";
     const baseName = stripDatasetExtension(datasetFilename) || "Vectronyx_Dashboard";
-    const effectiveCsv = csvContent || SAMPLE_SAAS_CSV;
+    const effectiveCsv = csvContent;
 
     try {
       const formData = new FormData();
@@ -457,71 +538,75 @@ export default function DataAnalyst() {
   const audit = dossier?.data_quality_audit;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 pb-20 animate-fadeIn">
-      {/* Principal Analytics Workbench Header */}
-      <div className="no-print p-6 sm:p-8 rounded-3xl glass-card border border-violet-500/25 relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-gradient-to-br from-violet-600/15 via-amber-600/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+    <div className="max-w-7xl mx-auto space-y-6 pb-20 animate-fadeIn">
+      {/* Compact Header & Sample Presets */}
+      <div className="no-print flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-display">
+            Data Analyst
+          </h1>
+          <p className="text-violet-200/70 text-xs sm:text-sm mt-1">
+            Statistical profiling, adaptive visualizations, anomaly detection, and Power BI / Tableau export.
+          </p>
+        </div>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs font-semibold tracking-wider uppercase mb-2.5 font-mono">
-              <Award className="w-3.5 h-3.5 text-amber-400" />
-              Principal Data Analyst Workbench • Quantile, ANOVA & Adaptive BI
-            </div>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight font-display">
-              Executive Statistical Analysis & BI Suite
-            </h1>
-            <p className="text-violet-200/70 text-xs sm:text-sm mt-1.5 max-w-2xl leading-relaxed">
-              Automatically classifies semantic column roles, selects optimal visual geometries
-              (Pareto 80/20, quantile-binned histograms, correlation scatters, time series),
-              audits ANOVA cohort variance & IsolationForest outliers, and compiles native Power BI (.pbip) & Tableau (.twbx).
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={handleLoadSample}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition cursor-pointer active:scale-95 border ${
+              fileName === "saas_enterprise_q3.csv"
+                ? "bg-gradient-to-r from-violet-700 to-purple-800 text-white border-violet-400/60"
+                : "bg-violet-950/60 hover:bg-violet-900/60 text-violet-200 border-violet-500/30"
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-amber-400" />
+            <span>SaaS Sample</span>
+          </button>
 
-          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={handleLoadFintechSample}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition cursor-pointer active:scale-95 border ${
+              fileName === "fintech_global_volume.csv"
+                ? "bg-gradient-to-r from-[#884F2E] to-[#542A13] text-white border-[#BD8E70]"
+                : "bg-[#3D1C0B]/60 hover:bg-[#542A13]/60 text-amber-200 border-[#884F2E]/30"
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>FinTech Sample</span>
+          </button>
+
+          {(csvContent || dashboard) && (
             <button
-              onClick={handleLoadSample}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shadow-md cursor-pointer active:scale-95 border ${
-                fileName === "saas_enterprise_q3.csv"
-                  ? "bg-gradient-to-r from-violet-700 to-purple-800 text-white border-violet-400/60 shadow-[0_0_15px_rgba(168,85,247,0.35)]"
-                  : "bg-violet-950/60 hover:bg-violet-900/60 text-violet-200 border-violet-500/30"
-              }`}
+              type="button"
+              onClick={handleClearWorkspace}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium text-violet-300/80 hover:text-white bg-violet-950/40 hover:bg-violet-900/50 border border-violet-500/20 transition cursor-pointer"
+              title="Reset dataset and report"
             >
-              <Database className="w-3.5 h-3.5 text-[#E8A276]" />
-              <span>SaaS ARR ($1.28M)</span>
+              <X className="w-3.5 h-3.5" />
+              <span>Clear</span>
             </button>
-
-            <button
-              onClick={handleLoadFintechSample}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition shadow-md cursor-pointer active:scale-95 border ${
-                fileName === "fintech_global_volume.csv"
-                  ? "bg-gradient-to-r from-[#884F2E] to-[#542A13] text-white border-[#BD8E70] shadow-[0_0_15px_rgba(189,142,112,0.35)]"
-                  : "bg-[#3D1C0B]/60 hover:bg-[#542A13]/60 text-[#D4B39B] border-[#884F2E]/30"
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-[#E8A276]" />
-              <span>FinTech Volume ($11.8M)</span>
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Ingestion & Strategic Mandate Configuration */}
+      {/* Dataset Ingestion & Analysis Prompt */}
       <div className="no-print grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 p-5 rounded-2xl glass-card border border-violet-500/20 flex flex-col justify-between space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
               <FileSpreadsheet className="w-4 h-4 text-amber-400" />
-              <span>1. Empirical Data Ingestion</span>
+              <span>1. Dataset Upload</span>
             </h2>
 
             <label className="border-2 border-dashed border-violet-500/30 hover:border-amber-400/50 transition rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-violet-950/20 hover:bg-violet-950/40">
-              <Upload className="w-8 h-8 text-amber-400 mb-2 animate-bounce" />
+              <Upload className="w-7 h-7 text-amber-400 mb-2" />
               <span className="text-sm font-medium text-violet-100 text-center">
                 {fileName ? fileName : "Upload CSV / TSV Dataset"}
               </span>
               <span className="text-xs text-violet-400/60 mt-1 font-mono">
-                Zero disk persistence • In-memory stream
+                Click to select a file
               </span>
               <input
                 type="file"
@@ -545,7 +630,7 @@ export default function DataAnalyst() {
               </div>
               {csvMeta.excludedIds.length > 0 && (
                 <div className="px-3 py-1.5 rounded-lg bg-amber-950/35 border border-amber-500/20 text-[11px] font-mono text-amber-300">
-                  Guarded ID keys (excluded from sums): {csvMeta.excludedIds.join(", ")}
+                  Excluded ID keys: {csvMeta.excludedIds.join(", ")}
                 </div>
               )}
             </div>
@@ -556,7 +641,7 @@ export default function DataAnalyst() {
           <div>
             <h2 className="text-sm font-semibold text-amber-200 flex items-center gap-2 mb-3">
               <Target className="w-4 h-4 text-amber-400" />
-              <span>2. Analytical Mandate & Hypothesis</span>
+              <span>2. Analysis Prompt</span>
             </h2>
 
             <textarea
@@ -571,6 +656,7 @@ export default function DataAnalyst() {
               {dynamicPromptChips.map((chip) => (
                 <button
                   key={chip}
+                  type="button"
                   onClick={() => setUserPrompt(chip)}
                   className="text-xs px-2.5 py-1 rounded-lg bg-violet-900/30 hover:bg-violet-800/40 text-violet-200 border border-violet-500/20 transition cursor-pointer text-left"
                 >
@@ -581,19 +667,16 @@ export default function DataAnalyst() {
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-amber-500/15">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-violet-300/65 font-mono">
-                Compiles Principal Report + Shape-Selected Visuals + Power BI & Tableau
-              </span>
+            <div className="min-w-0 flex-1">
               {loading && streamingStatus && (
                 <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
-                  <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-                  <span className="font-semibold text-white uppercase text-[10px]">Telemetry:</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400" />
                   <span className="truncate">{streamingStatus}</span>
                 </div>
               )}
             </div>
             <button
+              type="button"
               onClick={handleGenerateDashboard}
               disabled={loading}
               className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30 shrink-0"
@@ -601,7 +684,7 @@ export default function DataAnalyst() {
               {loading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
-                  <span>Running Diagnostics...</span>
+                  <span>Analyzing...</span>
                 </>
               ) : (
                 <>

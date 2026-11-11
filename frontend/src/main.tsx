@@ -10,7 +10,6 @@ import AppRouter from "./app/router";
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* <App /> */}
      <BrowserRouter>
        <Toaster position="top-center" />
        <AppRouter />

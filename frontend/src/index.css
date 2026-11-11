@@ -286,6 +286,15 @@
   color: #1A0B05 !important;
 }
 
+/* Catch all emerald and rose semantic status classes */
+.light [class*="text-emerald-"] {
+  color: #065F46 !important;
+}
+
+.light [class*="text-rose-"] {
+  color: #9F1239 !important;
+}
+
 .light [class*="text-gray-"],
 .light [class*="text-slate-"],
 .light [class*="text-zinc-"],
@@ -347,19 +356,27 @@
 .light button.bg-violet-600,
 .light button.bg-violet-700,
 .light button.bg-violet-800,
+.light button.bg-violet-600 *,
+.light button.bg-violet-700 *,
+.light button.bg-violet-800 *,
 .light button.bg-amber-600,
 .light button.bg-amber-700,
-.light button[class*="bg-violet-"] *,
-.light button[class*="bg-amber-"] * {
+.light button.bg-amber-600 *,
+.light button.bg-amber-700 * {
   color: #FFFFFF !important;
 }
 
 /* Light mode backgrounds for container chips */
+.light .bg-violet-900\/30,
+.light .bg-violet-900\/40,
+.light .bg-violet-900\/50,
 .light .bg-violet-950\/20,
 .light .bg-violet-950\/30,
+.light .bg-violet-950\/35,
 .light .bg-violet-950\/40,
 .light .bg-violet-950\/50,
 .light .bg-violet-950\/60,
+.light .bg-violet-950\/70,
 .light .bg-violet-950\/80 {
   background-color: rgba(237, 226, 250, 0.9) !important;
   border-color: rgba(109, 40, 217, 0.35) !important;
@@ -367,11 +384,14 @@
 
 .light .bg-amber-950\/20,
 .light .bg-amber-950\/30,
+.light .bg-amber-950\/35,
 .light .bg-amber-950\/40,
 .light .bg-amber-950\/50,
 .light .bg-amber-950\/60,
-.light .bg-amber-950\/80 {
-  background-color: rgba(248, 236, 225, 0.9) !important;
+.light .bg-amber-950\/70,
+.light .bg-amber-950\/80,
+.light [class*="bg-[#3D1C0B"] {
+  background-color: rgba(248, 236, 225, 0.92) !important;
   border-color: rgba(136, 79, 46, 0.38) !important;
 }
 
@@ -381,6 +401,19 @@
 .light .bg-black\/60 {
   background-color: rgba(246, 238, 229, 0.95) !important;
   border-color: rgba(110, 59, 30, 0.28) !important;
+}
+
+.light .bg-emerald-950\/40,
+.light .bg-emerald-950\/50 {
+  background-color: rgba(209, 250, 229, 0.85) !important;
+  border-color: rgba(5, 150, 105, 0.35) !important;
+}
+
+.light .bg-rose-950\/30,
+.light .bg-rose-950\/40,
+.light .bg-rose-950\/70 {
+  background-color: rgba(255, 228, 230, 0.9) !important;
+  border-color: rgba(225, 29, 72, 0.35) !important;
 }
 
 .light code, .light pre {
