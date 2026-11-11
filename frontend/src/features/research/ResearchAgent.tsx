@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { fetchEventStream } from "../../lib/sse";
+import { API_URL } from "../../lib/apiConfig";
 
 interface ResearchSource {
   title: string;
@@ -221,11 +222,9 @@ export default function ResearchAgent() {
 
     toast.loading("Deploying autonomous ReAct web explorer...", { id: "research-toast" });
 
-    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
     try {
       await fetchEventStream(
-        `${API_BASE}/api/research/stream`,
+        `${API_URL}/api/research/stream`,
         {
           method: "POST",
           body: { query: q, depth, domain_filter: domainFilter },

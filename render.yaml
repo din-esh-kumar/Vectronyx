@@ -47,3 +47,4 @@ services:
         value: supabase_pgvector
       - key: ALLOWED_ORIGINS
         value: "*"
+

@@ -80,3 +80,4 @@ HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 CMD ["sh", "-c", "cd /app/backend && uvicorn app.middleware.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2"]
+

@@ -42,8 +42,9 @@ import {
 } from "recharts";
 import toast from "react-hot-toast";
 import { fetchEventStream } from "../../lib/sse";
+import { API_URL } from "../../lib/apiConfig";
 
-const API_BASE = `${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/api/analyst`;
+const API_BASE = `${API_URL}/api/analyst`;
 
 // Curated enterprise dataset for instant evaluation
 const SAMPLE_SAAS_CSV = `Region,Category,Revenue,Profit,Transactions,ChurnRate

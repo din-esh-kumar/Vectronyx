@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -6,9 +7,10 @@ backend_root = str(Path(__file__).resolve().parent.parent.parent)
 if backend_root not in sys.path:
     sys.path.insert(0, backend_root)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from app.core.config import settings
 from app.middleware.auth import router as auth_router
 from app.modules.data_analyst.routes import router as analyst_router
 from app.modules.research_agent.routes import router as research_router
@@ -46,16 +48,38 @@ if not _dist_candidate.is_dir():
     _dist_candidate = Path("frontend/dist").resolve()
 
 if _dist_candidate.is_dir() and (_dist_candidate / "index.html").is_file():
-    app.mount("/assets", StaticFiles(directory=str(_dist_candidate / "assets")), name="assets")
+    _dist_root = _dist_candidate.resolve()
+    _assets_dir = _dist_root / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
+
+    _raw_index_html = (_dist_root / "index.html").read_text(encoding="utf-8")
+
+    def _render_index_html() -> str:
+        runtime_payload = {
+            "apiUrl": "",
+            "supabaseUrl": settings.SUPABASE_URL,
+            "supabasePublishableKey": settings.SUPABASE_PUBLISHABLE_KEY,
+        }
+        serialized = json.dumps(runtime_payload).replace("</", "<\\/")
+        script_tag = f"<script>window.__VECTRONYX_CONFIG__={serialized};</script>"
+        if "</head>" in _raw_index_html:
+            return _raw_index_html.replace("</head>", f"{script_tag}</head>", 1)
+        return f"{script_tag}{_raw_index_html}"
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        if full_path.startswith(("api", "auth", "health", "docs", "openapi.json", "redoc")):
-            return {"detail": "Not Found"}
-        target_file = _dist_candidate / full_path
-        if target_file.is_file():
-            return FileResponse(str(target_file))
-        return FileResponse(str(_dist_candidate / "index.html"))
+        if full_path in ("api", "auth", "health", "docs", "openapi.json", "redoc") or full_path.startswith(
+            ("api/", "auth/", "docs/")
+        ):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        if full_path:
+            target_file = (_dist_root / full_path).resolve()
+            if target_file.is_relative_to(_dist_root) and target_file.is_file():
+                return FileResponse(str(target_file))
+
+        return HTMLResponse(content=_render_index_html())
 else:
     @app.get("/")
     def root():

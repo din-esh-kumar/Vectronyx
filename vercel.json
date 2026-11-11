@@ -1,4 +1,5 @@
 {
+  "installCommand": "pnpm --dir frontend install --frozen-lockfile",
   "buildCommand": "pnpm --dir frontend run build",
   "outputDirectory": "frontend/dist",
   "cleanUrls": true,
@@ -20,3 +21,4 @@
     }
   ]
 }
+

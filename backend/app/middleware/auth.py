@@ -19,6 +19,9 @@ class LoginUser(BaseModel):
 # ✅ SIGNUP
 @router.post("/signup")
 def signup(user: SignupUser):
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Supabase client is not configured.")
+
     # check if user exists
     existing = supabase.table("users").select("*").eq("email", user.email).execute()
 
@@ -38,6 +41,9 @@ def signup(user: SignupUser):
 # ✅ LOGIN
 @router.post("/login")
 def login(user: LoginUser):
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Supabase client is not configured.")
+
     res = supabase.table("users").select("*").eq("email", user.email).execute()
 
     if not res.data:

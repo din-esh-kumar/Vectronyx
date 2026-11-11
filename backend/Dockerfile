@@ -1,15 +1,13 @@
 # ==============================================================================
-# Vectronyx AI Workbench - Production Backend Dockerfile
+# Vectronyx AI Workbench - Production Backend Dockerfile (HF Spaces & Docker)
 # ==============================================================================
 FROM python:3.10-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-# Prevent Python from writing pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -17,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies in a virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -26,39 +23,39 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ------------------------------------------------------------------------------
-# Production Runtime Stage
+# Production Runtime Stage (HF Spaces UID 1000 Compatible)
 # ------------------------------------------------------------------------------
 FROM python:3.10-slim AS runner
 
-WORKDIR /app
+# Hugging Face Spaces runs containers with UID 1000
+RUN useradd -m -u 1000 user
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV HOME=/home/user \
+    PATH="/opt/venv/bin:/home/user/.local/bin:$PATH" \
+    PYTHONPATH="/home/user/app" \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000 \
-    PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH="/app"
+    PORT=7860 \
+    FASTEMBED_CACHE_PATH=/tmp/fastembed_cache \
+    HF_HOME=/tmp/huggingface
 
-# Install runtime system libraries
+WORKDIR /home/user/app
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /tmp/fastembed_cache /tmp/huggingface \
+    && chmod -R 777 /tmp/fastembed_cache /tmp/huggingface
 
-# Copy virtualenv from builder
 COPY --from=builder /opt/venv /opt/venv
+COPY --chown=user:user . /home/user/app
 
-# Create a non-root system user
-RUN addgroup --system --gid 1001 vectronyx && \
-    adduser --system --uid 1001 --gid 1001 vectronyx
+USER user
 
-# Copy backend source code
-COPY --chown=vectronyx:vectronyx . .
+EXPOSE 7860
 
-USER vectronyx
+HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-7860}/health || exit 1
 
-EXPOSE 8000
-
-HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
-
-CMD ["sh", "-c", "uvicorn app.middleware.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2"]
+CMD ["sh", "-c", "uvicorn app.middleware.app:app --host 0.0.0.0 --port ${PORT:-7860} --workers ${UVICORN_WORKERS:-1}"]
