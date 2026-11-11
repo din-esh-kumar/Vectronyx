@@ -114,15 +114,70 @@ def test_e2e_api_export_powerbi():
     )
     assert export_res.status_code == 200
     assert export_res.headers["content-type"] == "application/zip"
+    assert "saas_PowerBI_Dashboard.zip" in export_res.headers.get("content-disposition", "")
 
     # Inspect zip contents
     zip_bytes = io.BytesIO(export_res.content)
     with zipfile.ZipFile(zip_bytes, "r") as z:
+        assert z.testzip() is None
         filenames = z.namelist()
-        assert any(f.endswith(".pbip") for f in filenames)
-        assert any("model.bim" in f for f in filenames)
-        assert any("report.json" in f for f in filenames)
-        assert any("dataset.csv" in f for f in filenames)
+        assert "saas.pbip" in filenames
+        assert "saas.Report/definition.pbir" in filenames
+        assert "saas.Report/report.json" in filenames
+        assert "saas.Dataset/definition.pbidataset" in filenames
+        assert "saas.Dataset/model.bim" in filenames
+        assert "saas.Dataset/dataset.csv" in filenames
+        assert "PowerBI_Setup_Guide.txt" in filenames
+
+        model_bim = json.loads(z.read("saas.Dataset/model.bim").decode("utf-8"))
+        table = model_bim["model"]["tables"][0]
+        assert table["name"] == "Dataset"
+        col_names = [c["name"] for c in table["columns"]]
+        assert "Region" in col_names
+        assert "Revenue" in col_names
+        assert len(table["partitions"]) == 1
+        assert len(table["measures"]) >= 1
+
+
+def test_e2e_api_large_csv_upload_and_powerbi_export():
+    """Verify >1 MB CSV file upload works across dashboard generation and Power BI export."""
+    row = "1234567890,9781234567890,Sample Book Title With Long Description Padding For Over One Megabyte Payload,4.25,150\n"
+    large_csv = "isbn10,isbn13,title,rating,pages\n" + (row * 12000)
+    assert len(large_csv.encode("utf-8")) > 1024 * 1024
+
+    gen_res = client.post(
+        "/api/analyst/generate-dashboard",
+        files={"file": ("books.csv", io.BytesIO(large_csv.encode("utf-8")), "text/csv")},
+        data={"prompt": "Evaluate rating and pages across books", "dataset_name": "books.csv"},
+    )
+    assert gen_res.status_code == 200
+    plan_dict = gen_res.json()
+    assert plan_dict["dataset_name"] == "books.csv"
+    assert len(plan_dict["kpis"]) >= 4
+
+    export_res = client.post(
+        "/api/analyst/export/powerbi",
+        files={"file": ("books.csv", io.BytesIO(large_csv.encode("utf-8")), "text/csv")},
+        data={"plan_json": json.dumps(plan_dict)},
+    )
+    assert export_res.status_code == 200
+    assert export_res.headers["content-type"] == "application/zip"
+    assert "books_PowerBI_Dashboard.zip" in export_res.headers.get("content-disposition", "")
+
+    with zipfile.ZipFile(io.BytesIO(export_res.content), "r") as z:
+        assert z.testzip() is None
+        filenames = z.namelist()
+        assert "books.pbip" in filenames
+        assert "books.Dataset/model.bim" in filenames
+        assert "books.Dataset/dataset.csv" in filenames
+
+    tableau_res = client.post(
+        "/api/analyst/export/tableau",
+        files={"file": ("books.csv", io.BytesIO(large_csv.encode("utf-8")), "text/csv")},
+        data={"plan_json": json.dumps(plan_dict)},
+    )
+    assert tableau_res.status_code == 200
+    assert "tableau" in tableau_res.headers["content-type"]
 
 
 def test_e2e_api_export_tableau():

@@ -1,6 +1,7 @@
 # backend/app/modules/data_analyst/routes.py
 import json
 import logging
+import re
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -22,6 +23,14 @@ from app.modules.data_analyst.export_tableau import generate_tableau_twbx_archiv
 
 logger = logging.getLogger("vectronyx.analyst_router")
 router = APIRouter(tags=["Data Analyst & Dashboard Generator"])
+
+
+def _sanitize_filename_base(dataset_name: Optional[str], default: str = "Vectronyx_Dashboard") -> str:
+    if not dataset_name:
+        return default
+    stem = re.sub(r"\.(csv|tsv|txt)$", "", dataset_name.strip(), flags=re.IGNORECASE)
+    sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_")
+    return sanitized or default
 
 @router.post("/profile", response_model=DatasetProfile)
 async def upload_and_profile_dataset(file: UploadFile = File(...)):
@@ -128,7 +137,8 @@ async def export_powerbi_endpoint(
 ):
     """
     Exports the generated dashboard as a deployable Power BI Project (.pbip) zip package,
-    including report.json visual layout, model.bim schema with DAX measures, and dataset.csv.
+    including .pbip, definition.pbir, report.json visual layout, definition.pbidataset,
+    model.bim schema with DAX measures, and dataset.csv.
     """
     try:
         csv_text = ""
@@ -143,15 +153,20 @@ async def export_powerbi_endpoint(
         plan_dict = json.loads(plan_json)
         plan = DashboardPlan(**plan_dict)
 
-        archive_buffer = generate_powerbi_pbip_archive(plan, csv_text)
-        
+        dataset_label = plan.dataset_name if plan.dataset_name and plan.dataset_name != "Dataset" else (file.filename if file else "Vectronyx_Dashboard")
+        filename_base = _sanitize_filename_base(dataset_label)
+        archive_buffer = generate_powerbi_pbip_archive(plan, csv_text, filename_base=filename_base)
+        download_filename = f"{filename_base}_PowerBI_Dashboard.zip"
+
         return Response(
             content=archive_buffer.getvalue(),
             media_type="application/zip",
             headers={
-                "Content-Disposition": 'attachment; filename="Vectronyx_PowerBI_Dashboard.zip"'
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error exporting Power BI package: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to export Power BI: {str(e)}")
@@ -180,15 +195,20 @@ async def export_tableau_endpoint(
         plan_dict = json.loads(plan_json)
         plan = DashboardPlan(**plan_dict)
 
-        archive_buffer = generate_tableau_twbx_archive(plan, csv_text)
+        dataset_label = plan.dataset_name if plan.dataset_name and plan.dataset_name != "Dataset" else (file.filename if file else "Vectronyx_Dashboard")
+        filename_base = _sanitize_filename_base(dataset_label)
+        archive_buffer = generate_tableau_twbx_archive(plan, csv_text, filename_base=filename_base)
+        download_filename = f"{filename_base}_Tableau_Dashboard.twbx"
 
         return Response(
             content=archive_buffer.getvalue(),
             media_type="application/vnd.tableau.workbook",
             headers={
-                "Content-Disposition": 'attachment; filename="Vectronyx_Tableau_Dashboard.twbx"'
+                "Content-Disposition": f'attachment; filename="{download_filename}"'
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error exporting Tableau package: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to export Tableau: {str(e)}")
@@ -204,7 +224,8 @@ async def export_dossier_endpoint(plan_json: str = Form(...)):
         plan = DashboardPlan(**plan_dict)
         markdown_content = generate_dossier_markdown(plan)
 
-        filename = f"{plan.dataset_name.replace('.csv', '')}_Executive_Dossier.md"
+        filename_base = _sanitize_filename_base(plan.dataset_name)
+        filename = f"{filename_base}_Executive_Dossier.md"
 
         return Response(
             content=markdown_content,
@@ -213,6 +234,8 @@ async def export_dossier_endpoint(plan_json: str = Form(...)):
                 "Content-Disposition": f'attachment; filename="{filename}"'
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error exporting Executive Dossier: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to export Dossier: {str(e)}")

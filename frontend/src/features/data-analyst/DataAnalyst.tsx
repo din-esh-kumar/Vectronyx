@@ -43,6 +43,11 @@ import {
 import toast from "react-hot-toast";
 import { fetchEventStream } from "../../lib/sse";
 import { API_URL } from "../../lib/apiConfig";
+import {
+  generatePowerBiPbipZipBlob,
+  sanitizePowerBiFilenameBase,
+  stripDatasetExtension,
+} from "../../lib/powerbiExport";
 
 const API_BASE = `${API_URL}/api/analyst`;
 
@@ -755,10 +760,14 @@ export default function DataAnalyst() {
     setErrorMsg("");
 
     try {
-      const formData = new FormData();
-      formData.append("raw_csv", csvContent);
-      formData.append("prompt", userPrompt);
-      formData.append("dataset_name", fileName || "dataset.csv");
+      const datasetFilename = fileName || "dataset.csv";
+      const createAnalysisFormData = () => {
+        const fd = new FormData();
+        fd.append("file", new Blob([csvContent], { type: "text/csv" }), datasetFilename);
+        fd.append("prompt", userPrompt);
+        fd.append("dataset_name", datasetFilename);
+        return fd;
+      };
 
       let receivedPlan: DashboardPlan | null = null;
 
@@ -767,7 +776,7 @@ export default function DataAnalyst() {
           `${API_BASE}/generate-dashboard/stream`,
           {
             method: "POST",
-            body: formData,
+            body: createAnalysisFormData(),
           },
           {
             onStatus: (data) => {
@@ -790,9 +799,10 @@ export default function DataAnalyst() {
         try {
           const restRes = await fetch(`${API_BASE}/generate-dashboard`, {
             method: "POST",
-            body: formData,
+            body: createAnalysisFormData(),
           });
-          if (restRes.ok) {
+          const restContentType = restRes.headers.get("content-type") || "";
+          if (restRes.ok && restContentType.includes("application/json")) {
             receivedPlan = await restRes.json();
           }
         } catch (restErr) {
@@ -821,6 +831,7 @@ export default function DataAnalyst() {
   const handleExportDossier = async () => {
     if (!dashboard) return;
     setDownloadingFormat("dossier");
+    const baseName = stripDatasetExtension(dashboard.dataset_name) || "Vectronyx";
 
     try {
       const formData = new FormData();
@@ -831,13 +842,16 @@ export default function DataAnalyst() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Fallback to client export");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || contentType.includes("text/html")) {
+        throw new Error("Fallback to client export");
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_Executive_Dossier.md`;
+      a.download = `${baseName}_Executive_Dossier.md`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -849,7 +863,7 @@ export default function DataAnalyst() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_Executive_Dossier.md`;
+      a.download = `${baseName}_Executive_Dossier.md`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -860,14 +874,29 @@ export default function DataAnalyst() {
     }
   };
 
-  // Export to Power BI (.pbip / zip)
+  // Export to Power BI (.pbip ZIP package)
   const handleExportPowerBI = async () => {
     if (!dashboard) return;
     setDownloadingFormat("powerbi");
 
+    const datasetFilename = dashboard.dataset_name || fileName || "dataset.csv";
+    const filenameBase = sanitizePowerBiFilenameBase(datasetFilename);
+    const effectiveCsv = csvContent || SAMPLE_SAAS_CSV;
+
+    const triggerDownload = (blob: Blob, downloadName: string) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    };
+
     try {
       const formData = new FormData();
-      formData.append("raw_csv", csvContent || SAMPLE_SAAS_CSV);
+      formData.append("file", new Blob([effectiveCsv], { type: "text/csv" }), datasetFilename);
       formData.append("plan_json", JSON.stringify(dashboard));
 
       const res = await fetch(`${API_BASE}/export/powerbi`, {
@@ -875,29 +904,28 @@ export default function DataAnalyst() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Fallback to client bundle");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || contentType.includes("text/html")) {
+        throw new Error("Fallback to client Power BI bundle");
+      }
 
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_PowerBI_Dashboard.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success("Power BI package exported");
+      triggerDownload(blob, `${filenameBase}_PowerBI_Dashboard.zip`);
+      toast.success("Power BI (.pbip) package exported");
     } catch (err: any) {
-      const blob = new Blob([dashboard.dax_script], { type: "text/plain" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_DAX_Measures.dax`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success("DAX measures exported as .dax");
+      const blob = generatePowerBiPbipZipBlob(
+        {
+          title: dashboard.title,
+          dataset_name: datasetFilename,
+          kpis: dashboard.kpis,
+          visuals: dashboard.visuals,
+          dax_script: dashboard.dax_script,
+          powerquery_m: dashboard.powerquery_m,
+        },
+        effectiveCsv
+      );
+      triggerDownload(blob, `${filenameBase}_PowerBI_Dashboard.zip`);
+      toast.success("Power BI (.pbip) package exported (client bundle)");
     } finally {
       setDownloadingFormat(null);
     }
@@ -907,10 +935,13 @@ export default function DataAnalyst() {
   const handleExportTableau = async () => {
     if (!dashboard) return;
     setDownloadingFormat("tableau");
+    const datasetFilename = dashboard.dataset_name || fileName || "dataset.csv";
+    const baseName = stripDatasetExtension(datasetFilename) || "Vectronyx_Dashboard";
+    const effectiveCsv = csvContent || SAMPLE_SAAS_CSV;
 
     try {
       const formData = new FormData();
-      formData.append("raw_csv", csvContent || SAMPLE_SAAS_CSV);
+      formData.append("file", new Blob([effectiveCsv], { type: "text/csv" }), datasetFilename);
       formData.append("plan_json", JSON.stringify(dashboard));
 
       const res = await fetch(`${API_BASE}/export/tableau`, {
@@ -918,13 +949,16 @@ export default function DataAnalyst() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Fallback to client bundle");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || contentType.includes("text/html")) {
+        throw new Error("Fallback to client bundle");
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_Tableau_Dashboard.twbx`;
+      a.download = `${baseName}_Tableau_Dashboard.twbx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -936,7 +970,7 @@ export default function DataAnalyst() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${dashboard.dataset_name.replace(".csv", "")}_Tableau_Fields.txt`;
+      a.download = `${baseName}_Tableau_Fields.txt`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1153,7 +1187,7 @@ export default function DataAnalyst() {
                 onClick={handleExportPowerBI}
                 disabled={downloadingFormat === "powerbi"}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-950/50 hover:bg-amber-900/60 text-amber-300 font-medium text-xs border border-amber-500/30 transition cursor-pointer"
-                title="Download Power BI Project package"
+                title="Download Power BI Project (.pbip ZIP — unzip and open .pbip in Power BI Desktop, or Save As .pbix)"
               >
                 <Download className="w-3.5 h-3.5 text-amber-400" />
                 <span>{downloadingFormat === "powerbi" ? "Exporting..." : "Power BI (.pbip)"}</span>
@@ -1655,6 +1689,7 @@ export default function DataAnalyst() {
                       onClick={handleExportPowerBI}
                       disabled={downloadingFormat === "powerbi"}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-950/50 hover:bg-amber-900/60 text-amber-300 font-medium text-xs border border-amber-500/30 transition cursor-pointer"
+                      title="Download Power BI Project (.pbip ZIP — unzip and open .pbip in Power BI Desktop, or Save As .pbix)"
                     >
                       <Download className="w-3.5 h-3.5 text-amber-400" />
                       <span>{downloadingFormat === "powerbi" ? "Exporting..." : "Download Power BI (.pbip)"}</span>
