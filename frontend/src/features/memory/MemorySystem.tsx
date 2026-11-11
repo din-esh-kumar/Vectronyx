@@ -4,21 +4,12 @@ import {
   Search,
   Plus,
   SlidersHorizontal,
-  HardDrive,
-  Cpu,
   Layers,
-  Sparkles,
-  CheckCircle2,
   Trash2,
   Eye,
   Tag,
   Clock,
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-  Filter,
-  X,
-  RefreshCw
+  X
 } from "lucide-react";
 import toast from "react-hot-toast";
 

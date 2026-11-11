@@ -2,7 +2,6 @@
 import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
 import pandas as pd
 from scipy import stats
 
@@ -166,7 +165,8 @@ def classify_dataframe_roles(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
 
     for col in df.columns:
         col_name = str(col)
-        series = df[col]
+        raw_col = df[col]
+        series: pd.Series = raw_col if isinstance(raw_col, pd.Series) else raw_col.iloc[:, 0]
         non_null = series.dropna()
         n_valid = len(non_null)
         nunique = int(series.nunique(dropna=True))
@@ -570,7 +570,7 @@ def compute_correlations_and_matrix(
         return [], None
 
     selected = candidates[:7]
-    corr_df = df[selected].corr(method="pearson").fillna(0.0)
+    corr_df = pd.DataFrame(df[selected]).corr(method="pearson").fillna(0.0)
     matrix_rows: List[List[float]] = []
     for row_col in selected:
         matrix_rows.append([safe_float(corr_df.loc[row_col, col], 0.0, decimals=2) for col in selected])
@@ -588,10 +588,10 @@ def compute_correlations_and_matrix(
             if paired[m_a].std() <= 1e-12 or paired[m_b].std() <= 1e-12:
                 continue
             try:
-                r_res = stats.pearsonr(paired[m_a], paired[m_b])
+                r_res: Any = stats.pearsonr(paired[m_a], paired[m_b])
                 r_val = safe_float(r_res.statistic if hasattr(r_res, "statistic") else r_res[0], 0.0, decimals=3)
                 p_val = safe_float(r_res.pvalue if hasattr(r_res, "pvalue") else r_res[1], 1.0, decimals=4)
-                s_res = stats.spearmanr(paired[m_a], paired[m_b])
+                s_res: Any = stats.spearmanr(paired[m_a], paired[m_b])
                 rho_val = safe_float(s_res.statistic if hasattr(s_res, "statistic") else s_res[0], r_val, decimals=3)
             except Exception:
                 continue
@@ -689,20 +689,22 @@ def compute_segment_benchmarks(
     ss_total = safe_float(((global_series - global_mean) ** 2).sum(), 0.0)
 
     for idx, dim in enumerate(usable_cats[:5]):
-        sub = df[[dim, metric]].dropna()
-        if len(sub) < 4 or sub[dim].nunique() < 2:
+        sub: pd.DataFrame = pd.DataFrame(df.loc[:, [dim, metric]]).dropna()
+        sub_dim = pd.Series(sub[dim])
+        if len(sub) < 4 or sub_dim.nunique() < 2:
             continue
-        grouped = sub.groupby(dim, observed=True)[metric]
-        counts = grouped.count()
+        counts_raw = sub.groupby(dim, observed=True)[metric].count()
+        counts: pd.Series = counts_raw if isinstance(counts_raw, pd.Series) else pd.Series(counts_raw)
         # Keep top 20 groups by count for ANOVA when high cardinality
-        top_keys = counts.sort_values(ascending=False).head(20).index
-        anova_sub = sub[sub[dim].isin(top_keys)]
-        group_arrays = [grp[metric].values for _, grp in anova_sub.groupby(dim, observed=True) if len(grp) >= 1]
+        top_keys = counts.sort_values(ascending=False).head(20).index.tolist()
+        anova_sub: pd.DataFrame = pd.DataFrame(sub[sub_dim.isin(top_keys)])
+        group_arrays = [grp[metric].to_numpy() for _, grp in anova_sub.groupby(dim, observed=True) if len(grp) >= 1]
         eta_sq = 0.0
         if len(group_arrays) >= 2 and ss_total > 1e-12:
-            group_means = anova_sub.groupby(dim, observed=True)[metric].agg(["count", "mean"])
+            group_means = pd.DataFrame(anova_sub.groupby(dim, observed=True)[metric].agg(["count", "mean"]))
             ss_between = float((group_means["count"] * (group_means["mean"] - global_mean) ** 2).sum())
-            ss_sub_total = float(((anova_sub[metric] - anova_sub[metric].mean()) ** 2).sum())
+            anova_metric = pd.Series(anova_sub[metric])
+            ss_sub_total = float(((anova_metric - anova_metric.mean()) ** 2).sum())
             if ss_sub_total > 1e-12:
                 eta_sq = safe_float(min(1.0, max(0.0, ss_between / ss_sub_total)), 0.0, decimals=3)
 
@@ -714,12 +716,14 @@ def compute_segment_benchmarks(
     benchmarks: List[SegmentBenchmark] = []
 
     for _, dim, eta_sq in scored_dims[:2]:
-        sub = df[[dim, metric]].dropna()
-        agg_df = sub.groupby(dim, observed=True)[metric].agg(["count", "sum", "mean"]).reset_index()
+        sub_bench: pd.DataFrame = pd.DataFrame(df.loc[:, [dim, metric]]).dropna()
+        agg_df: pd.DataFrame = pd.DataFrame(
+            sub_bench.groupby(dim, observed=True)[metric].agg(["count", "sum", "mean"]).reset_index()
+        )
 
         # Filter tiny sample artifacts only when comparing averages in large high-cardinality datasets
         if is_intensive and len(df) >= 100 and len(agg_df) > 15:
-            filtered = agg_df[agg_df["count"] >= 3]
+            filtered = pd.DataFrame(agg_df[agg_df["count"] >= 3])
             if len(filtered) >= 5:
                 agg_df = filtered
 

@@ -7,8 +7,7 @@ Create Date: 2026-04-11 01:13:16.988295
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
+from alembic import op  # type: ignore[attr-defined]  # noqa: F401
 
 
 # revision identifiers, used by Alembic.

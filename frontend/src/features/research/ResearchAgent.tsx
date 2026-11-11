@@ -8,18 +8,12 @@ import {
   Download,
   Copy,
   Check,
-  ChevronRight,
   ExternalLink,
   ShieldCheck,
-  Cpu,
   Layers,
-  ArrowRight,
   Zap,
-  BookOpen,
-  Filter,
   RefreshCw,
   Terminal,
-  Activity,
   Square,
   Radio
 } from "lucide-react";
@@ -170,7 +164,7 @@ For engineering teams prioritizing data governance, privacy, and architectural s
 export default function ResearchAgent() {
   const [query, setQuery] = useState("");
   const [depth, setDepth] = useState<"quick" | "react" | "deep">("react");
-  const [domainFilter, setDomainFilter] = useState("all");
+  const [domainFilter] = useState("all");
   const [isSearching, setIsSearching] = useState(false);
   const [report, setReport] = useState<ResearchReport | null>(INITIAL_REPORT);
   const [activeTab, setActiveTab] = useState<"dossier" | "traces" | "sources">("dossier");

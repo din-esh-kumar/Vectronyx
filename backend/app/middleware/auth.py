@@ -49,15 +49,17 @@ def login(user: LoginUser):
     if not res.data:
         raise HTTPException(status_code=401, detail="User not found")
 
-    db_user = res.data[0]
+    raw_user = res.data[0]
+    if not isinstance(raw_user, dict):
+        raise HTTPException(status_code=500, detail="Invalid user record returned from database.")
 
-    if db_user["password"] != user.password:
+    if raw_user.get("password") != user.password:
         raise HTTPException(status_code=401, detail="Invalid password")
 
     return {
         "message": "Login successful",
         "user": {
-            "email": db_user["email"],
-            "name": db_user["name"]
+            "email": raw_user.get("email"),
+            "name": raw_user.get("name")
         }
     }

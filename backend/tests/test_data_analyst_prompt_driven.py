@@ -8,7 +8,6 @@ from app.modules.data_analyst.analyst import (
     compute_ground_truth_context,
     reconcile_kpi_ground_truth,
     calculate_concentration_analysis,
-    calculate_statistical_diagnostics,
     compute_visual_series_data,
     _heuristic_fallback_dashboard,
     generate_complete_dashboard,

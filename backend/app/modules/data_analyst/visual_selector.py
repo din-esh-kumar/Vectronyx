@@ -11,7 +11,6 @@ from app.modules.data_analyst.profiler import (
     safe_float,
 )
 from app.modules.data_analyst.schemas import (
-    AnomalyFinding,
     ChartVisualSpec,
     ConcentrationAnalysis,
     CorrelationInsight,
@@ -94,7 +93,8 @@ def compute_visual_series_data_expert(
             col = visual.x_axis if pd.api.types.is_numeric_dtype(df[visual.x_axis]) else visual.y_axis
             if not pd.api.types.is_numeric_dtype(df[col]):
                 return []
-            series = df[col].dropna()
+            raw_series = df[col]
+            series: pd.Series = (raw_series if isinstance(raw_series, pd.Series) else raw_series.iloc[:, 0]).dropna()
             if len(series) < 3 or safe_float(series.std(), 0.0) <= 1e-12:
                 return []
 
@@ -114,15 +114,15 @@ def compute_visual_series_data_expert(
 
             # Handle extreme power-law tail compression so main distribution remains readable
             tail_overflow_count = 0
-            plot_series = series
+            plot_series: pd.Series = series
             tail_capped = False
             if abs(skew) >= 1.8 and s_max > 0 and p98 > s_min and p98 < s_max * 0.45:
-                plot_series = series[series <= p98]
+                plot_series = pd.Series(series[series <= p98])
                 tail_overflow_count = int((series > p98).sum())
                 tail_capped = True
 
             n_bins = min(12, max(6, int(round(1 + 3.322 * np.log10(max(2, len(plot_series)))))))
-            counts, edges = np.histogram(plot_series.values, bins=n_bins)
+            counts, edges = np.histogram(np.asarray(plot_series, dtype=float), bins=n_bins)
             total_n = max(1, len(series))
 
             result: List[Dict[str, Any]] = []
@@ -160,7 +160,7 @@ def compute_visual_series_data_expert(
 
         # 2. SCATTER PLOT (Bivariate numerical relationship + outlier markers)
         if ctype == "scatter":
-            pair_df = df[[visual.x_axis, visual.y_axis]].dropna()
+            pair_df: pd.DataFrame = pd.DataFrame(df[[visual.x_axis, visual.y_axis]]).dropna()
             if pair_df.empty:
                 return []
 
@@ -172,8 +172,8 @@ def compute_visual_series_data_expert(
             anom_set = anomaly_indices or set()
             if len(pair_df) > 100:
                 outlier_mask = pair_df.index.isin(anom_set)
-                outlier_rows = pair_df[outlier_mask].head(15)
-                normal_rows = pair_df[~outlier_mask]
+                outlier_rows = pd.DataFrame(pair_df.loc[outlier_mask]).head(15)
+                normal_rows = pd.DataFrame(pair_df.loc[~outlier_mask])
                 sample_n = max(1, 100 - len(outlier_rows))
                 sampled_normal = normal_rows.sample(n=min(sample_n, len(normal_rows)), random_state=42)
                 sample_df = pd.concat([outlier_rows, sampled_normal]).sort_index()
@@ -191,10 +191,11 @@ def compute_visual_series_data_expert(
 
             result = []
             for idx, row in sample_df.iterrows():
-                pt_label = f"Row #{int(idx) + 1}" if isinstance(idx, (int, np.integer)) else str(idx)
+                idx_display = f"#{int(idx) + 1}" if isinstance(idx, (int, np.integer)) else str(idx)
+                pt_label = f"Row {idx_display}"
                 if label_col and label_col in df.columns and pd.notna(df.loc[idx, label_col]):
                     raw_lbl = str(df.loc[idx, label_col])
-                    pt_label = f"{raw_lbl[:28]} (#{int(idx) + 1})"
+                    pt_label = f"{raw_lbl[:28]} ({idx_display})"
                 result.append({
                     "name": pt_label,
                     "x": safe_float(row[visual.x_axis], decimals=4),
@@ -204,7 +205,7 @@ def compute_visual_series_data_expert(
 
             if len(pair_df) >= 4 and pair_df[visual.x_axis].std() > 1e-12 and pair_df[visual.y_axis].std() > 1e-12:
                 try:
-                    res = stats.pearsonr(pair_df[visual.x_axis], pair_df[visual.y_axis])
+                    res: Any = stats.pearsonr(pair_df[visual.x_axis], pair_df[visual.y_axis])
                     r_val = safe_float(res.statistic if hasattr(res, "statistic") else res[0], 0.0, decimals=2)
                     p_val = safe_float(res.pvalue if hasattr(res, "pvalue") else res[1], 1.0, decimals=4)
                     p_txt = "p < 0.001" if p_val < 0.001 else f"p = {p_val:.3f}"
@@ -287,20 +288,27 @@ def compute_visual_series_data_expert(
 
         # 4. CATEGORICAL / PARETO / RANKED BAR / DONUT AGGREGATIONS
         agg = (visual.aggregation or y_info.get("default_agg", "sum")).lower()
-        sub = df[[visual.x_axis, visual.y_axis]].dropna()
+        sub: pd.DataFrame = pd.DataFrame(df[[visual.x_axis, visual.y_axis]]).dropna()
         if sub.empty:
             return []
 
+        grouped: pd.DataFrame
         if agg in ("avg", "mean"):
-            grouped = sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="mean", count="count").reset_index()
+            grouped = pd.DataFrame(
+                sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="mean", count="count").reset_index()
+            )
             if len(df) >= 100 and len(grouped) > 15:
-                eligible = grouped[grouped["count"] >= 3]
+                eligible = pd.DataFrame(grouped[grouped["count"] >= 3])
                 if len(eligible) >= 5:
                     grouped = eligible
         elif agg == "count":
-            grouped = sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="count", count="count").reset_index()
+            grouped = pd.DataFrame(
+                sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="count", count="count").reset_index()
+            )
         else:
-            grouped = sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="sum", count="count").reset_index()
+            grouped = pd.DataFrame(
+                sub.groupby(visual.x_axis, observed=True)[visual.y_axis].agg(value="sum", count="count").reset_index()
+            )
 
         grouped = grouped.sort_values(by="value", ascending=False)
 
@@ -525,8 +533,10 @@ def build_expert_visual_plan(
         used_pairs.add((primary_num, primary_num))
 
     # 4. Bivariate Scatter Plot on strongest numeric pair
-    if len(usable_numerics) >= 2:
-        pair_x, pair_y, pair_r = primary_num, sec_num, None
+    if len(usable_numerics) >= 2 and sec_num is not None:
+        pair_x: str = primary_num
+        pair_y: str = sec_num
+        pair_r: Optional[float] = None
         if correlations:
             best = correlations[0]
             pair_x, pair_y, pair_r = best.metric_a, best.metric_b, best.pearson_r

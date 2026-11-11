@@ -1,7 +1,7 @@
 # backend/alembic/env.py
 from logging.config import fileConfig
 from sqlalchemy import create_engine, text
-from alembic import context
+from alembic import context  # type: ignore[attr-defined]
 import os, sys
 from pathlib import Path
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import Base + models
 from app.db.migrations.database import Base
-from app.db.models import user, memory, query_log
+from app.db.models import user, memory, query_log  # noqa: F401
 
 target_metadata = Base.metadata
 
@@ -40,6 +40,8 @@ if DATABASE_URL:
 
 
 def run_migrations_online():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is required to run Alembic migrations.")
     connectable = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,

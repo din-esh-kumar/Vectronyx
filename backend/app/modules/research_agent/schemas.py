@@ -1,6 +1,6 @@
 # backend/app/modules/research_agent/schemas.py
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional, Union
+from typing import List, Optional
 
 class ResearchSource(BaseModel):
     title: str
@@ -91,9 +91,9 @@ class AgentToolCallDecision(BaseModel):
     """Guaranteed type-safe agent tool call decision emitted via Instructor."""
     thought: str = Field(..., description="Agent reasoning analyzing next operational step")
     tool: str = Field(..., description="Target tool: 'web_search', 'web_scrape', or 'data_analyst'")
-    web_search_args: Optional[WebSearchArgs] = Field(None, description="Arguments when tool is web_search")
-    web_scrape_args: Optional[WebScrapeArgs] = Field(None, description="Arguments when tool is web_scrape")
-    data_analyst_args: Optional[DataAnalystArgs] = Field(None, description="Arguments when tool is data_analyst")
+    web_search_args: Optional[WebSearchArgs] = Field(default=None, description="Arguments when tool is web_search")
+    web_scrape_args: Optional[WebScrapeArgs] = Field(default=None, description="Arguments when tool is web_scrape")
+    data_analyst_args: Optional[DataAnalystArgs] = Field(default=None, description="Arguments when tool is data_analyst")
 
     @model_validator(mode="after")
     def validate_tool_and_args(self) -> "AgentToolCallDecision":

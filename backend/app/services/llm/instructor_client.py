@@ -5,7 +5,7 @@ Wraps Groq Cloud and Google Gemini (GenAI) client calls with automatic Pydantic 
 guaranteeing zero JSON/XML parsing errors, self-correcting feedback loops, and type-safe tool invocations.
 """
 import logging
-from typing import Type, TypeVar, Optional, Any, List, Dict
+from typing import Type, TypeVar, Optional, Any, List, Dict, cast
 from pydantic import BaseModel
 import instructor
 from instructor import Mode
@@ -95,7 +95,7 @@ async def _execute_with_groq(
         client = get_groq_instructor(mode=target_mode)
         return await client.create(
             response_model=response_model,
-            messages=messages,
+            messages=cast(Any, messages),
             model=groq_model,
             max_retries=max_retries,
             temperature=temperature,
@@ -118,7 +118,7 @@ async def _execute_with_groq(
             client = get_groq_instructor(mode=Mode.JSON)
             return await client.create(
                 response_model=response_model,
-                messages=messages,
+                messages=cast(Any, messages),
                 model=groq_model,
                 max_retries=max_retries,
                 temperature=temperature,
@@ -141,7 +141,7 @@ async def _execute_with_gemini(
     try:
         return await client.create(
             response_model=response_model,
-            messages=messages,
+            messages=cast(Any, messages),
             model=gemini_model,
             max_retries=max_retries,
             temperature=temperature,
@@ -150,7 +150,7 @@ async def _execute_with_gemini(
         logger.warning(f"Gemini {gemini_model} failed ({e}); falling back to {fallback_model}")
         return await client.create(
             response_model=response_model,
-            messages=messages,
+            messages=cast(Any, messages),
             model=fallback_model,
             max_retries=max_retries,
             temperature=temperature,

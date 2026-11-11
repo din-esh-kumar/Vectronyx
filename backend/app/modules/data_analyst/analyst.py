@@ -1,14 +1,11 @@
 # backend/app/modules/data_analyst/analyst.py
 import io
-import json
 import logging
-from typing import Dict, Any, List, Optional, Set, AsyncGenerator
+from typing import Dict, Any, List, Optional, Set, AsyncGenerator, cast
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-import httpx
 
-from app.core.config import settings
 from app.core.sse import sse_event
 from app.services.llm.instructor_client import generate_structured
 from app.modules.data_analyst.profiler import (
@@ -69,7 +66,13 @@ def calculate_concentration_analysis(df: pd.DataFrame, cat_cols: List[str], nume
     cat_col = cat_cols[0]
     num_col = numeric_cols[0]
 
-    grouped = df.groupby(cat_col)[num_col].sum().sort_values(ascending=False)
+    grouped_raw = df.groupby(cat_col)[num_col].sum()
+    grouped: pd.Series = (
+        grouped_raw
+        if isinstance(grouped_raw, pd.Series)
+        else (grouped_raw.iloc[:, 0] if isinstance(grouped_raw, pd.DataFrame) else pd.Series(grouped_raw))
+    )
+    grouped = grouped.sort_values(ascending=False)
     total_vol = float(grouped.sum())
 
     if total_vol <= 0 or len(grouped) == 0:
@@ -306,7 +309,16 @@ def compute_ground_truth_context(
         p_info = resolved_roles.get(str(primary_num), {})
         use_mean = bool(p_info.get("is_intensive", False))
         try:
-            agg_series = df.groupby(primary_cat, observed=True)[primary_num].mean() if use_mean else df.groupby(primary_cat, observed=True)[primary_num].sum()
+            agg_raw = (
+                df.groupby(primary_cat, observed=True)[primary_num].mean()
+                if use_mean
+                else df.groupby(primary_cat, observed=True)[primary_num].sum()
+            )
+            agg_series: pd.Series = (
+                agg_raw
+                if isinstance(agg_raw, pd.Series)
+                else (agg_raw.iloc[:, 0] if isinstance(agg_raw, pd.DataFrame) else pd.Series(agg_raw))
+            )
             grouped = agg_series.sort_values(ascending=False).head(5)
             cohort_lines = [f"{k}: {v:,.2f}" for k, v in grouped.items()]
             lines.append(f"- Top {primary_cat} cohorts for {primary_num} ({'Mean' if use_mean else 'Sum'}): {'; '.join(cohort_lines)}")
@@ -441,10 +453,11 @@ def profile_dataset(
     ]
     if len(model_features) >= 1 and row_count >= 5:
         try:
-            medians = df[model_features].median()
-            num_df = df[model_features].fillna(medians)
-            stds = num_df.std().replace(0, 1.0)
-            iso = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+            feat_df = pd.DataFrame(df[model_features])
+            medians = pd.Series(feat_df.median())
+            num_df = feat_df.fillna(medians)
+            stds = pd.Series(num_df.std()).replace(0, 1.0)
+            iso = IsolationForest(n_estimators=100, contamination=cast(Any, 0.05), random_state=42)
             preds = iso.fit_predict(num_df)
             scores = iso.decision_function(num_df)
 

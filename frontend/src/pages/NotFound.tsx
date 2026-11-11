@@ -1,6 +1,5 @@
-import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Compass, LayoutDashboard, Sparkles } from "lucide-react";
+import { Compass, LayoutDashboard, Sparkles } from "lucide-react";
 
 export default function NotFound() {
   return (

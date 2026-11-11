@@ -1,5 +1,4 @@
 # backend/tests/test_data_analyst_api_e2e.py
-import pytest
 import io
 import json
 import zipfile

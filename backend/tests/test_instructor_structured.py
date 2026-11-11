@@ -1,8 +1,8 @@
 # backend/tests/test_instructor_structured.py
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from unittest.mock import AsyncMock, patch
+from pydantic import BaseModel, Field, ValidationError
 import instructor
 from instructor import Mode
 
@@ -18,10 +18,8 @@ from app.modules.research_agent.schemas import (
     WebSearchArgs,
     WebScrapeArgs,
     DataAnalystArgs,
-    ResearchPlanningDecision,
     ResearchFindingsExtraction,
     KeyFinding,
-    ResearchStreamRequest,
 )
 from app.modules.research_agent.tools import (
     execute_web_search,
@@ -35,7 +33,6 @@ from app.modules.data_analyst.schemas import (
     DashboardPlan,
     KPISpec,
     ChartVisualSpec,
-    AnomalyFinding,
 )
 from app.modules.data_analyst.analyst import call_llm_dashboard_planner, generate_complete_dashboard
 from app.modules.research_agent.agent import stream_research_agent

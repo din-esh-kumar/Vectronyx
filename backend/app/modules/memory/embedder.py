@@ -13,13 +13,14 @@ Supports:
 
 import os
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import List, Optional
 import httpx
 from loguru import logger
 from app.core.config import settings
 
 try:
     import anyio
+    import anyio.to_thread
 except ImportError:
     anyio = None
 

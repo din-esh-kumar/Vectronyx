@@ -1,8 +1,7 @@
 # backend/app/modules/research_agent/agent.py
 import time
-import json
 import logging
-from typing import AsyncGenerator, List, Dict, Any, Optional
+from typing import AsyncGenerator, List, Optional
 
 from app.core.config import settings
 from app.core.sse import sse_event
@@ -22,11 +21,8 @@ from app.modules.research_agent.prompts import (
     build_research_synthesis_prompt,
 )
 from app.modules.research_agent.tools import (
-    search_web,
-    scrape_page,
     execute_web_search,
     execute_web_scrape,
-    execute_data_analyst,
     dispatch_tool_call,
 )
 from app.services.llm.instructor_client import generate_structured

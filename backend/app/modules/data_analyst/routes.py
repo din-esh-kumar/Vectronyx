@@ -4,13 +4,11 @@ import logging
 import re
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from typing import Optional
 
 from app.modules.data_analyst.schemas import (
     DatasetProfile,
     DashboardPlan,
-    DashboardGenerateRequest,
 )
 from app.modules.data_analyst.analyst import (
     profile_dataset,

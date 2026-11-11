@@ -20,7 +20,7 @@ except ImportError:
     spaces = None  # type: ignore
     _HAS_SPACES = False
 
-import gradio as gr
+import gradio as gr  # type: ignore[import-not-found]  # Pre-installed in Hugging Face Spaces runtime
 import uvicorn
 
 from app.middleware.app import app as backend_app

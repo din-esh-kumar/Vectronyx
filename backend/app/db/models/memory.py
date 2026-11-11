@@ -1,5 +1,5 @@
 # backend/app/db/models/memory.py
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Integer, Text, ForeignKey
 from app.db.migrations.database import Base
 
 class Memory(Base):

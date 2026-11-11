@@ -7,16 +7,10 @@ Auto-Fallback mechanism, Cosine Similarity, and FastAPI endpoints.
 """
 
 import pytest
-import numpy as np
 from app.modules.memory.embedder import (
     GeminiCloudEmbedder,
     FastEmbedLocalEmbedder,
     DualModeEmbedder,
-    get_embedder,
-    embed_text,
-    embed_texts,
-    async_embed_text,
-    async_embed_texts,
 )
 from app.modules.memory.memory_store import cosine_similarity
 from app.core.config import settings

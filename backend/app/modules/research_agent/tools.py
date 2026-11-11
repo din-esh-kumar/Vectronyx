@@ -68,7 +68,7 @@ def search_web(query: str, max_results: int = 4) -> List[ResearchSource]:
     
     # 1. Try modern `ddgs` library
     try:
-        from ddgs import DDGS
+        from ddgs import DDGS  # type: ignore[import-not-found]
         with DDGS(timeout=8) as ddgs:
             raw_results = list(ddgs.text(clean_query, max_results=max_results))
             for item in raw_results:
@@ -92,7 +92,7 @@ def search_web(query: str, max_results: int = 4) -> List[ResearchSource]:
 
     # 2. Try `duckduckgo_search` fallback
     try:
-        from duckduckgo_search import DDGS as FallbackDDGS
+        from duckduckgo_search import DDGS as FallbackDDGS  # type: ignore[import-not-found]
         with FallbackDDGS(timeout=8) as ddgs:
             raw_results = list(ddgs.text(clean_query, max_results=max_results))
             for item in raw_results:

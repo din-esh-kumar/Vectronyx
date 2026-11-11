@@ -268,7 +268,8 @@ def main() -> int:
     print(f"  HF Space Page : https://huggingface.co/spaces/{space_id}")
     print(f"  Backend URL   : {api_url}")
     print(f"  Health Check  : {api_url}/health")
-    print(f"  Commit Diff   : {'new commit (' + new_sha[:8] + ')' if commit_changed else 'no backend file changes'}")
+    commit_summary = f"new commit ({new_sha[:8]})" if (commit_changed and new_sha) else "no backend file changes"
+    print(f"  Commit Diff   : {commit_summary}")
 
     if args.wait:
         print(f"\nWaiting for HF Space readiness (timeout={args.wait_timeout}s)...")

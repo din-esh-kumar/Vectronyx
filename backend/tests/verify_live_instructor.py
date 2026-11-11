@@ -22,25 +22,13 @@ if backend_root not in sys.path:
 
 import asyncio
 import json
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field, field_validator
 import httpx
 
-from app.core.config import settings
-from app.services.llm.instructor_client import (
-    generate_structured,
-    get_groq_instructor,
-    get_genai_instructor,
-)
-from app.modules.research_agent.schemas import (
-    WebSearchArgs,
-    WebScrapeArgs,
-    DataAnalystArgs,
-    ResearchPlanningDecision,
-)
+from app.services.llm.instructor_client import generate_structured
 from app.modules.research_agent.tools import dispatch_tool_call
 from app.modules.data_analyst.schemas import DashboardPlan
-from app.modules.data_analyst.analyst import generate_complete_dashboard
 from app.main import app
 
 
@@ -132,17 +120,17 @@ async def test_type_safe_tool_dispatcher():
     
     # Check WebSearch result
     search_res = results[0]
-    assert not isinstance(search_res, Exception), f"Search failed: {search_res}"
+    assert not isinstance(search_res, BaseException), f"Search failed: {search_res}"
     print(f"[OK] WebSearch Tool Dispatched: Retrieved {len(search_res)} sources")
 
     # Check WebScrape result
     scrape_res = results[1]
-    assert not isinstance(scrape_res, Exception), f"Scrape failed: {scrape_res}"
+    assert not isinstance(scrape_res, BaseException), f"Scrape failed: {scrape_res}"
     print(f"[OK] WebScrape Tool Dispatched: Extracted {len(scrape_res)} chars")
 
     # Check DataAnalyst result
     analyst_res = results[2]
-    assert not isinstance(analyst_res, Exception), f"DataAnalyst failed: {analyst_res}"
+    assert not isinstance(analyst_res, BaseException), f"DataAnalyst failed: {analyst_res}"
     assert isinstance(analyst_res, DashboardPlan)
     print(f"[OK] DataAnalyst Tool Dispatched: Generated DashboardPlan '{analyst_res.title}' with {len(analyst_res.kpis)} KPIs")
 

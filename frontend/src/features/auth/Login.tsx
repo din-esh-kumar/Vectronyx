@@ -9,8 +9,6 @@ import {
   EyeOff,
   Sparkles,
   Zap,
-  Shield,
-  Layers,
   ArrowRight,
   Database,
   Cpu,
