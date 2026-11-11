@@ -52,10 +52,13 @@ jobs:
               commit_message='Deploy Vectronyx backend from GitHub Actions',
               ignore_patterns=[
                   '**/__pycache__/**',
+                  '**/__pycache__',
                   '**/*.pyc',
+                  '**/*.pyo',
                   '.venv/**',
                   'venv/**',
                   '.pytest_cache/**',
+                  '**/.pytest_cache/**',
                   'tests/**',
                   '.env*',
               ],
@@ -63,3 +66,4 @@ jobs:
           )
           print(f'Successfully deployed to https://huggingface.co/spaces/{space_id}')
           "
+

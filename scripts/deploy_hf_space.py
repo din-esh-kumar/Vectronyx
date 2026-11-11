@@ -131,10 +131,13 @@ def main() -> int:
         commit_message="Deploy Vectronyx backend to Hugging Face Space",
         ignore_patterns=[
             "**/__pycache__/**",
+            "**/__pycache__",
             "**/*.pyc",
+            "**/*.pyo",
             ".venv/**",
             "venv/**",
             ".pytest_cache/**",
+            "**/.pytest_cache/**",
             "tests/**",
             ".env*",
         ],

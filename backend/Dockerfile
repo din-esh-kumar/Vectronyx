@@ -43,6 +43,7 @@ WORKDIR /home/user/app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libgomp1 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /tmp/fastembed_cache /tmp/huggingface \
