@@ -37,12 +37,18 @@ class KPISpec(BaseModel):
 class ChartVisualSpec(BaseModel):
     id: str
     title: str
-    chart_type: str  # "bar", "line", "area", "pie", "scatter"
+    chart_type: str  # "bar", "horizontal_bar", "line", "area", "pie", "scatter", "histogram", "pareto"
     x_axis: str
     y_axis: str
-    aggregation: str = "sum"  # "sum", "avg", "count"
+    aggregation: str = "sum"  # "sum", "avg", "count", "distribution", "pareto", "raw"
     series_data: List[Dict[str, Any]] = []
     description: str
+    selection_reason: Optional[str] = None
+    key_insight: Optional[str] = None
+    reference_value: Optional[float] = None
+    reference_label: Optional[str] = None
+    unit_format: Optional[str] = None  # "currency", "percent", "number", "count"
+    stat_badge: Optional[str] = None
 
 class AnomalyFinding(BaseModel):
     row_index: int
@@ -61,6 +67,76 @@ class StatisticalDiagnostic(BaseModel):
     kurtosis: float
     cv: float  # Coefficient of Variation
     interpretation: str
+    median: Optional[float] = None
+    p25: Optional[float] = None
+    p75: Optional[float] = None
+    p95: Optional[float] = None
+    min_val: Optional[float] = None
+    max_val: Optional[float] = None
+    iqr: Optional[float] = None
+    outlier_count: Optional[int] = None
+    outlier_pct: Optional[float] = None
+    normality_verdict: Optional[str] = None
+    sample_count: Optional[int] = None
+    unit_format: Optional[str] = None
+
+class CorrelationInsight(BaseModel):
+    metric_a: str
+    metric_b: str
+    pearson_r: float
+    spearman_rho: Optional[float] = None
+    p_value: Optional[float] = None
+    strength: str  # "Strong", "Moderate", "Weak", "Negligible"
+    direction: str  # "Positive", "Inverse", "Neutral"
+    interpretation: str
+
+class CorrelationMatrixData(BaseModel):
+    metrics: List[str] = []
+    matrix: List[List[float]] = []
+
+class SegmentPerformanceRow(BaseModel):
+    dimension: str
+    segment: str
+    record_count: int
+    metric_total: Optional[float] = None
+    metric_mean: float
+    share_pct: float
+    vs_mean_pct: float
+    status: str  # "Outperformer", "Baseline", "Underperformer"
+
+class SegmentBenchmark(BaseModel):
+    dimension: str
+    metric: str
+    eta_squared: float
+    cohort_count: int
+    top_segment: str
+    bottom_segment: str
+    spread_ratio: Optional[float] = None
+    narrative: str
+    rows: List[SegmentPerformanceRow] = []
+
+class ColumnAuditItem(BaseModel):
+    name: str
+    semantic_role: str
+    dtype: str
+    null_count: int
+    null_pct: float
+    unique_count: int
+    zero_count: int = 0
+    recommendation: Optional[str] = None
+
+class DataQualityAudit(BaseModel):
+    total_rows: int
+    total_columns: int
+    duplicate_rows: int
+    duplicate_pct: float
+    completeness_pct: float
+    excluded_id_columns: List[str] = []
+    temporal_columns: List[str] = []
+    continuous_columns: List[str] = []
+    rate_columns: List[str] = []
+    categorical_columns: List[str] = []
+    column_audit: List[ColumnAuditItem] = []
 
 class ConcentrationAnalysis(BaseModel):
     dimension: str
@@ -97,6 +173,10 @@ class ExecutiveDossier(BaseModel):
     strategic_initiatives: List[StrategicInitiative] = []
     risk_matrix: List[RiskAssessment] = []
     methodological_notes: List[str] = []
+    data_quality_audit: Optional[DataQualityAudit] = None
+    correlation_insights: List[CorrelationInsight] = []
+    correlation_matrix: Optional[CorrelationMatrixData] = None
+    segment_benchmarks: List[SegmentBenchmark] = []
 
 class DashboardPlan(BaseModel):
     title: str

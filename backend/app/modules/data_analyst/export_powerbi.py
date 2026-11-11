@@ -129,6 +129,7 @@ def generate_powerbi_pbip_archive(plan: DashboardPlan, csv_content: str, filenam
         
         # Add KPI cards
         for i, kpi in enumerate(plan.kpis):
+            safe_kpi_title = kpi.title.replace("'", "''")
             visual_containers.append({
                 "x": 20 + (i * 240),
                 "y": 20,
@@ -141,7 +142,7 @@ def generate_powerbi_pbip_archive(plan: DashboardPlan, csv_content: str, filenam
                         "visualType": "card",
                         "projections": {"Fields": [{"queryRef": f"Dataset.{kpi.title}"}]},
                         "visualContainerObjects": {
-                            "title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}}, "text": {"expr": {"Literal": {"Value": f"'{kpi.title}'"}}}}}]
+                            "title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}}, "text": {"expr": {"Literal": {"Value": f"'{safe_kpi_title}'"}}}}}]
                         }
                     }
                 })
@@ -154,17 +155,25 @@ def generate_powerbi_pbip_archive(plan: DashboardPlan, csv_content: str, filenam
             row_idx = i // 2
             vx = 20 + (col_idx * 620)
             vy = chart_y + (row_idx * 340)
-            
-            pb_visual_type = "clusteredColumnChart"
-            if vis.chart_type == "line":
-                pb_visual_type = "lineChart"
-            elif vis.chart_type == "area":
-                pb_visual_type = "areaChart"
-            elif vis.chart_type == "pie":
-                pb_visual_type = "donutChart"
-            elif vis.chart_type == "scatter":
-                pb_visual_type = "scatterChart"
 
+            ctype = (vis.chart_type or "").lower()
+            pb_visual_type = "clusteredColumnChart"
+            if ctype == "line":
+                pb_visual_type = "lineChart"
+            elif ctype == "area":
+                pb_visual_type = "areaChart"
+            elif ctype == "pie":
+                pb_visual_type = "donutChart"
+            elif ctype == "scatter":
+                pb_visual_type = "scatterChart"
+            elif ctype == "horizontal_bar":
+                pb_visual_type = "clusteredBarChart"
+            elif ctype == "pareto":
+                pb_visual_type = "lineClusteredColumnComboChart"
+            elif ctype == "histogram":
+                pb_visual_type = "clusteredColumnChart"
+
+            safe_vis_title = vis.title.replace("'", "''")
             visual_containers.append({
                 "x": vx,
                 "y": vy,
@@ -179,7 +188,7 @@ def generate_powerbi_pbip_archive(plan: DashboardPlan, csv_content: str, filenam
                             "Y": [{"queryRef": f"Dataset.{vis.y_axis}"}]
                         },
                         "visualContainerObjects": {
-                            "title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}}, "text": {"expr": {"Literal": {"Value": f"'{vis.title}'"}}}}}]
+                            "title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}}, "text": {"expr": {"Literal": {"Value": f"'{safe_vis_title}'"}}}}}]
                         }
                     }
                 })

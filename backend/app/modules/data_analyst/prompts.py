@@ -31,10 +31,12 @@ Output JSON Specification:
     {
       "id": "vis_1",
       "title": "string (e.g. Revenue Velocity by Region)",
-      "chart_type": "bar",
+      "chart_type": "bar | horizontal_bar | line | area | pie | scatter | histogram | pareto",
       "x_axis": "Exact column name",
       "y_axis": "Exact column name",
-      "aggregation": "sum",
+      "aggregation": "sum | avg | count | distribution | raw",
+      "selection_reason": "string (Why this exact chart geometry fits the variable types, cardinality, and skew)",
+      "key_insight": "string (Specific empirical finding quantified from the data)",
       "description": "string (Analytical lens explaining why this visualization isolates structural trends)"
     }
   ],
@@ -101,10 +103,18 @@ Output JSON Specification:
   ]
 }
 
-Analytical Standards:
-1. Provide 4 high-impact KPIs with benchmarks, variances, and executive takeaways. When verified ground-truth figures are provided in the prompt, use those exact numbers for KPI values, variances, and rationale.
-2. Provide between 3 to 5 visual charts directly targeting the metrics and dimensions identified in the user mandate. Supported chart types: "bar", "line", "area", "pie", "scatter". Always use exact dataset column names for x_axis and y_axis.
-3. The Executive Dossier MUST read with uncompromised intellectual authority: rigorous economics, precise operational terminology, and clear capital allocation implications directly answering the user mandate.
+Analytical & Chart-Selection Standards (10+ Year Principal Data Analyst):
+1. Provide 4 high-impact KPIs with benchmarks, variances, and executive takeaways. NEVER sum identifier keys (ID, ISBN, UUID, zip) or intensive properties (rates, averages, ratings, pages, prices) — use averages/medians for intensive metrics and sums for additive volume/revenue. Ground KPI values in VERIFIED GROUND-TRUTH EMPIRICAL COMPUTATIONS.
+2. Provide 4 to 5 complementary visual charts strictly chosen for the underlying data geometry:
+   - "line" or "area": ONLY when x_axis is an ordered datetime/temporal/year column. NEVER plot unordered categories on a line or area chart.
+   - "histogram": For inspecting skewness, modality, and spread of continuous numeric distributions (set x_axis = y_axis = metric, aggregation = "distribution").
+   - "scatter": For bivariate numeric relationships and outlier detection (always cite correlation r if strong/moderate, set aggregation = "raw").
+   - "pareto": For 80/20 concentration across ranked categorical cohorts on additive sum metrics.
+   - "horizontal_bar": When ranking categories with >= 6 items or long category text labels.
+   - "bar": When comparing <= 5 discrete cohorts against a baseline mean.
+   - "pie": ONLY when 2-5 mutually exclusive additive categories sum cleanly to 100% (NEVER for rates/averages/scores).
+   Always use exact non-ID column names for x_axis and y_axis, and fill selection_reason and key_insight for every chart.
+3. The Executive Dossier MUST cite verified empirical medians, IQRs, correlations, ANOVA segment drivers, HHI concentration, and Tukey outliers from the prompt rather than generic fluff.
 4. Ensure all DAX and Tableau formulas are syntactically valid.
 """
 
@@ -115,11 +125,12 @@ def build_dashboard_user_prompt(
     user_prompt: str,
     ground_truth_summary: str = "",
     target_focus: str = "",
+    deep_stats_summary: str = "",
 ) -> str:
     prompt_body = f"""DATASET NAME: {dataset_name}
 TOTAL OBSERVATIONS: {row_count}
 
-DATASET SCHEMA, STATISTICAL DISTRIBUTIONS & ECONOMETRIC DIAGNOSTICS:
+DATASET SCHEMA, SEMANTIC ROLES & ECONOMETRIC DIAGNOSTICS:
 {schema_summary}
 """
     if target_focus:
@@ -132,14 +143,19 @@ RESOLVED TARGET DIMENSIONS & ANALYTICAL INTENT:
 VERIFIED GROUND-TRUTH EMPIRICAL COMPUTATIONS:
 {ground_truth_summary}
 """
+    if deep_stats_summary:
+        prompt_body += f"""
+MULTIVARIATE CORRELATIONS, SEGMENT VARIANCE (ANOVA) & DATA QUALITY AUDIT:
+{deep_stats_summary}
+"""
     prompt_body += f"""
 EXECUTIVE INQUIRY & STRATEGIC MANDATE:
 "{user_prompt}"
 
 INSTRUCTIONS:
-1. Ground every KPI value, variance, and takeaway directly in the VERIFIED GROUND-TRUTH COMPUTATIONS above whenever applicable. Do NOT invent unrelated numbers.
-2. Prioritize visual charts that specifically isolate the metrics and cohorts specified in the EXECUTIVE INQUIRY.
-3. In the Executive Dossier (Verdict, Situation, Complication, Resolution), directly solve the strategic dilemma and operational headwinds raised in the mandate.
-4. Synthesize this data into the 30-Year Veteran Executive Intelligence Dossier and Dashboard Specification JSON.
+1. Ground every KPI value, variance, and takeaway directly in the VERIFIED GROUND-TRUTH COMPUTATIONS above. Cite actual medians vs means, correlation r values, and top/bottom cohort disparities in your narrative.
+2. Select chart types strictly according to data structure (temporal -> area/line; continuous skew -> histogram; numeric pair -> scatter; ranked additive concentration -> pareto; >=6 categories -> horizontal_bar; <=5 additive mix -> pie). Never use ID columns in KPIs or charts.
+3. In the Executive Dossier (Verdict, Situation, Complication, Resolution, Initiatives, Risk Matrix), directly address the statistical findings and strategic mandate.
+4. Synthesize this data into the Principal Data Analyst Intelligence Dossier and Dashboard Specification JSON.
 """
     return prompt_body

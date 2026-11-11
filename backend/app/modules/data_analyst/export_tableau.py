@@ -1,8 +1,13 @@
 # backend/app/modules/data_analyst/export_tableau.py
+import html
 import io
-import xml.etree.ElementTree as ET
 import zipfile
 from app.modules.data_analyst.schemas import DashboardPlan
+
+
+def _xml_attr(value: str) -> str:
+    return html.escape(value or "", quote=True).replace("'", "&apos;")
+
 
 def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filename_base: str = "Vectronyx_Dashboard") -> io.BytesIO:
     """
@@ -16,19 +21,18 @@ def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filenam
     # Using clean manual XML construction to guarantee valid Tableau DTD attributes
     calculated_fields_xml = ""
     for idx, calc in enumerate(plan.tableau_calculated_fields):
-        caption = calc.get("caption", f"Calc_{idx}")
-        formula = calc.get("formula", "")
-        # Escape XML entities in formulas
-        clean_formula = formula.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        caption = _xml_attr(calc.get("caption", f"Calc_{idx}"))
+        clean_formula = _xml_attr(calc.get("formula", ""))
         calculated_fields_xml += f"""
       <column caption='{caption}' datatype='real' name='[Calculation_{idx}]' role='measure' type='quantitative'>
         <calculation class='tableau' formula='{clean_formula}' />
       </column>"""
 
     for idx, kpi in enumerate(plan.kpis):
-        clean_formula = kpi.formula_tableau.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        clean_formula = _xml_attr(kpi.formula_tableau)
+        kpi_caption = _xml_attr(kpi.title)
         calculated_fields_xml += f"""
-      <column caption='{kpi.title}' datatype='real' name='[KPI_{idx}]' role='measure' type='quantitative'>
+      <column caption='{kpi_caption}' datatype='real' name='[KPI_{idx}]' role='measure' type='quantitative'>
         <calculation class='tableau' formula='{clean_formula}' />
       </column>"""
 
@@ -36,9 +40,10 @@ def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filenam
     worksheets_xml = ""
     zones_xml = ""
     total_vis = len(plan.visuals)
-    
+    safe_dash_title = _xml_attr(plan.title[:30])
+
     for idx, vis in enumerate(plan.visuals):
-        sheet_name = f"Sheet_{idx+1}_{vis.title[:20].replace(' ', '_')}"
+        sheet_name = _xml_attr(f"Sheet_{idx+1}_{vis.title[:20].replace(' ', '_')}")
         worksheets_xml += f"""
   <worksheet name='{sheet_name}'>
     <table>
@@ -57,8 +62,8 @@ def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filenam
           <mark class='Automatic' />
         </pane>
       </panes>
-      <rows>[federated.dataset].[{vis.y_axis}]</rows>
-      <cols>[federated.dataset].[{vis.x_axis}]</cols>
+      <rows>[federated.dataset].[{_xml_attr(vis.y_axis)}]</rows>
+      <cols>[federated.dataset].[{_xml_attr(vis.x_axis)}]</cols>
     </table>
   </worksheet>"""
 
@@ -95,7 +100,7 @@ def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filenam
     {worksheets_xml}
   </worksheets>
   <dashboards>
-    <dashboard name='{plan.title[:30]}'>
+    <dashboard name='{safe_dash_title}'>
       <style />
       <size maxheight='{dashboard_height}' maxwidth='1300' minheight='700' minwidth='1000' />
       <zones>
@@ -105,7 +110,7 @@ def generate_tableau_twbx_archive(plan: DashboardPlan, csv_content: str, filenam
     </dashboard>
   </dashboards>
   <windows>
-    <window class='dashboard' maximized='true' name='{plan.title[:30]}'>
+    <window class='dashboard' maximized='true' name='{safe_dash_title}'>
       <viewpoints />
       <active id='-1' />
     </window>

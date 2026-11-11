@@ -387,3 +387,51 @@
   background-color: #261106 !important;
   color: #F8EFE7 !important;
 }
+
+.light svg .recharts-cartesian-axis-tick-value,
+.light svg .recharts-legend-item-text {
+  fill: #4C1D95 !important;
+  color: #4C1D95 !important;
+}
+
+/* Clean Executive Print / Save-as-PDF Mode */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #111827 !important;
+  }
+
+  .no-print,
+  nav,
+  aside,
+  header {
+    display: none !important;
+  }
+
+  .glass-card,
+  .glass-card-bronze,
+  .glass-panel {
+    background: #FFFFFF !important;
+    color: #111827 !important;
+    border: 1px solid #D1D5DB !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  h1, h2, h3, h4, h5, h6,
+  [class*="text-white"],
+  [class*="text-violet-"],
+  [class*="text-amber-"] {
+    color: #111827 !important;
+  }
+
+  .print-break-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

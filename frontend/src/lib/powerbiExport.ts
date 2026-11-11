@@ -14,6 +14,8 @@ export interface PowerBiVisualSpec {
   chart_type: string;
   x_axis: string;
   y_axis: string;
+  selection_reason?: string;
+  key_insight?: string;
 }
 
 export interface PowerBiDashboardPlan {
@@ -250,6 +252,12 @@ function mapVisualType(chartType: string): string {
       return "donutChart";
     case "scatter":
       return "scatterChart";
+    case "horizontal_bar":
+      return "clusteredBarChart";
+    case "pareto":
+      return "lineClusteredColumnComboChart";
+    case "histogram":
+      return "clusteredColumnChart";
     default:
       return "clusteredColumnChart";
   }
@@ -299,7 +307,7 @@ export function generatePowerBiPbipZipBlob(
               {
                 properties: {
                   show: { expr: { Literal: { Value: "true" } } },
-                  text: { expr: { Literal: { Value: `'${kpi.title}'` } } },
+                  text: { expr: { Literal: { Value: `'${kpi.title.replace(/'/g, "''")}'` } } },
                 },
               },
             ],
@@ -334,7 +342,7 @@ export function generatePowerBiPbipZipBlob(
               {
                 properties: {
                   show: { expr: { Literal: { Value: "true" } } },
-                  text: { expr: { Literal: { Value: `'${vis.title}'` } } },
+                  text: { expr: { Literal: { Value: `'${vis.title.replace(/'/g, "''")}'` } } },
                 },
               },
             ],
