@@ -72,12 +72,28 @@ Ensure your cloud accounts and environment variables are ready:
    `https://<your-hf-username>-vectronyx-backend.hf.space`
    Verify health at `https://<your-hf-username>-vectronyx-backend.hf.space/health`.
 
-#### B. Automatic GitHub Actions Sync
-1. In your GitHub repo **Settings → Secrets and variables → Actions**:
-   - Add Secret: `HF_TOKEN` (Hugging Face Write access token)
-   - Add Variable: `HF_SPACE_ID` (e.g. `<your-hf-username>/vectronyx-api`)
-2. Push to `main` (or manually trigger **Deploy Backend to Hugging Face Space** in GitHub Actions).
-3. In the Hugging Face Space **Settings → Variables and secrets**, ensure your runtime secrets (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `SECRET_KEY`) are configured.
+#### B. Automatic GitHub Actions CI/CD Pipeline (Recommended for Merges)
+The repository includes a unified CI/CD workflow in [`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml):
+- **On Pull Requests to `main`**: runs **Security & Secret Scan** (`scripts/ci_secret_scan.py`), **Frontend CI** (`pnpm --dir frontend run typecheck`, Vite production build, bundle secret audit), and **Backend CI** (`compileall` + deterministic offline `pytest` suite with zero API keys required).
+- **On Merge / Push to `main`** (only after all CI gates pass):
+  1. Automatically deploys `backend/` to Hugging Face Spaces (`scripts/deploy_hf_space.py --sdk gradio --wait`) and waits for runtime `RUNNING` + `/health` readiness.
+  2. Automatically deploys the frontend to Vercel via `vercel deploy --prebuilt --prod` if `VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` secrets are configured, or relies on Vercel's native GitHub `main` integration when omitted.
+  3. Runs **Post-Deploy Live Verification** against HF Spaces (`/health`, `/openapi.json`, `/api/memory/status`, CORS `OPTIONS`) and Vercel (`/`, `/research`, `/data-analyst`, `/memory`).
+
+**GitHub Repository Configuration** (**Settings → Secrets and variables → Actions**):
+- **Required Secret**:
+  - `HF_TOKEN` — Hugging Face Write access token for auto-deploying to HF Spaces.
+- **Optional Secrets** *(only needed if you want GitHub Actions CLI `--prebuilt` deploy instead of Vercel's native Git integration)*:
+  - `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
+- **Optional Variables**:
+  - `HF_SPACE_ID` *(defaults to `din-esh-kumar/vectronyx-backend`)*
+  - `FRONTEND_URL` *(defaults to `https://vectronyx.vercel.app`)*
+  - `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GEMINI_MODEL`, `VITE_GROQ_MODEL`
+
+> [!TIP]
+> Enable GitHub Branch Protection on `main` requiring **`Security & Secret Scan`**, **`Frontend CI (Typecheck, Build & Bundle Audit)`**, and **`Backend CI (Compile & Offline Test Suite)`** so broken PRs or leaked secrets cannot merge.
+
+In Hugging Face Space **Settings → Variables and secrets**, ensure your runtime secrets (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `SECRET_KEY`) are configured.
 
 ### Step 2: Deploy Frontend to Vercel
 1. Sign in to [Vercel](https://vercel.com) and click **Add New** → **Project**.

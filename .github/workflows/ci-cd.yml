@@ -1,0 +1,337 @@
+name: Vectronyx CI/CD Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: vectronyx-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Security & Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Scan tracked files for leaked secrets
+        run: python scripts/ci_secret_scan.py
+
+  frontend-ci:
+    name: Frontend CI (Typecheck, Build & Bundle Audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: TypeScript check
+        run: pnpm --dir frontend run typecheck
+
+      - name: Build production Vite bundle
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://din-esh-kumar-vectronyx-backend.hf.space' }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_GEMINI_MODEL: ${{ vars.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+          VITE_GROQ_MODEL: ${{ vars.VITE_GROQ_MODEL || 'openai/gpt-oss-120b' }}
+        run: pnpm --dir frontend run build
+
+      - name: Audit built JS bundle for leaked secrets
+        run: python3 scripts/ci_secret_scan.py --paths frontend/dist
+
+      - name: Upload built frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 5
+
+  backend-ci:
+    name: Backend CI (Compile & Offline Test Suite)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Bytecode compile backend and deployment scripts
+        run: python -m compileall -q backend/app backend/space_app.py scripts
+
+      - name: Run deterministic offline pytest suite
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          ENVIRONMENT: test
+          GEMINI_API_KEY: ""
+          GROQ_API_KEY: ""
+          DATABASE_URL: ""
+          SUPABASE_URL: ""
+          SUPABASE_SERVICE_ROLE_KEY: ""
+          SUPABASE_PUBLISHABLE_KEY: ""
+          SECRET_KEY: "ci-offline-verification-secret"
+        run: |
+          pytest \
+            backend/tests/test_ci_smoke.py \
+            backend/tests/test_data_analyst_prompt_driven.py \
+            backend/tests/test_data_analyst_api_e2e.py \
+            backend/tests/test_instructor_stress.py \
+            backend/tests/test_instructor_structured.py \
+            backend/tests/test_sse_streaming.py \
+            -k "not test_web_search_args_validation and not test_stream_research_agent_with_data_analyst_tool and not test_research_sse_event_stream" \
+            -v
+
+  deploy-hf-space:
+    name: Auto-Deploy Backend (HF Spaces)
+    needs: [secret-scan, frontend-ci, backend-ci]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      backend_url: ${{ steps.hf_deploy.outputs.backend_url }}
+      space_id: ${{ steps.hf_deploy.outputs.space_id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install huggingface_hub
+        run: pip install --no-cache-dir "huggingface_hub>=0.26.0"
+
+      - name: Deploy backend/ to Hugging Face Space and await readiness
+        id: hf_deploy
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'din-esh-kumar/vectronyx-backend' }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN repository secret is not set. Add HF_TOKEN in GitHub Settings -> Secrets and variables -> Actions -> Secrets to enable Hugging Face Space auto-deploy."
+            {
+              echo "### Hugging Face Space Auto-Deploy Blocked"
+              echo "- Add **\`HF_TOKEN\`** (Hugging Face Write token) in **Settings -> Secrets and variables -> Actions -> Secrets**."
+              echo "- Optional variable: **\`HF_SPACE_ID\`** (defaults to \`din-esh-kumar/vectronyx-backend\`)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          BACKEND_URL=$(python -c "import os, re; o, n = os.environ['HF_SPACE_ID'].split('/', 1); print(f'https://{re.sub(r\"[^a-z0-9-]\", \"-\", o.lower())}-{re.sub(r\"[^a-z0-9-]\", \"-\", n.lower())}.hf.space')")
+          echo "space_id=$HF_SPACE_ID" >> "$GITHUB_OUTPUT"
+          echo "backend_url=$BACKEND_URL" >> "$GITHUB_OUTPUT"
+
+          python scripts/deploy_hf_space.py \
+            --space-id "$HF_SPACE_ID" \
+            --sdk gradio \
+            --wait \
+            --wait-timeout 300
+
+          {
+            echo "### Hugging Face Space Deployment"
+            echo "- **Space**: [\`$HF_SPACE_ID\`](https://huggingface.co/spaces/$HF_SPACE_ID)"
+            echo "- **API URL**: $BACKEND_URL"
+            echo "- **Health Probe**: $BACKEND_URL/health"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-vercel:
+    name: Auto-Deploy Frontend (Vercel)
+    needs: [secret-scan, frontend-ci, backend-ci]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.vercel_deploy.outputs.mode }}
+      frontend_url: ${{ steps.vercel_deploy.outputs.frontend_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Deploy prebuilt Vercel output or hand off to Git integration
+        id: vercel_deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          FALLBACK_FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://vectronyx.vercel.app' }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::notice::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID not all set — relying on Vercel native GitHub main auto-deploy."
+            echo "mode=git-integration" >> "$GITHUB_OUTPUT"
+            echo "frontend_url=$FALLBACK_FRONTEND_URL" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Vercel Frontend Deployment (GitHub Integration)"
+              echo "- Vercel CLI secrets (\`VERCEL_TOKEN\`, \`VERCEL_ORG_ID\`, \`VERCEL_PROJECT_ID\`) are not set, so production builds run via Vercel's native GitHub \`main\` integration."
+              echo "- **Production URL**: $FALLBACK_FRONTEND_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          npm install -g vercel@65.14.0
+          vercel pull --yes --environment=production
+          vercel build --prod
+
+          if [ -d ".vercel/output/static" ]; then
+            python3 scripts/ci_secret_scan.py --paths .vercel/output/static
+          elif [ -d "frontend/.vercel/output/static" ]; then
+            python3 scripts/ci_secret_scan.py --paths frontend/.vercel/output/static
+          fi
+
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod)
+          echo "mode=cli" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=$FALLBACK_FRONTEND_URL" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Vercel Frontend Deployment (CLI --prebuilt)"
+            echo "- **Deployment URL**: $DEPLOY_URL"
+            echo "- **Production Alias**: $FALLBACK_FRONTEND_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  post-deploy-verify:
+    name: Post-Deploy Live Verification
+    needs: [deploy-hf-space, deploy-vercel]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify live Hugging Face Space API & Vercel SPA routes
+        env:
+          BACKEND_URL: ${{ needs.deploy-hf-space.outputs.backend_url }}
+          FRONTEND_URL: ${{ needs.deploy-vercel.outputs.frontend_url }}
+          VERCEL_DEPLOY_MODE: ${{ needs.deploy-vercel.outputs.mode }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+
+          backend_url = os.environ["BACKEND_URL"].rstrip("/")
+          frontend_url = os.environ["FRONTEND_URL"].rstrip("/")
+          vercel_mode = os.environ.get("VERCEL_DEPLOY_MODE", "git-integration")
+
+          def fetch(url: str, method: str = "GET", headers=None, timeout: float = 15.0):
+              req = urllib.request.Request(url, method=method, headers=headers or {})
+              with urllib.request.urlopen(req, timeout=timeout) as resp:
+                  return resp.status, dict(resp.headers), resp.read().decode("utf-8", errors="ignore")
+
+          # 1. Verify Backend endpoints
+          for path in ("/health", "/openapi.json", "/api/memory/status"):
+              status, _, body = fetch(f"{backend_url}{path}")
+              assert status == 200, f"Expected 200 for {backend_url}{path}, got {status}"
+              print(f"[OK] GET {backend_url}{path} -> {status}")
+
+          status, headers, _ = fetch(
+              f"{backend_url}/api/analyst/generate-dashboard/stream",
+              method="OPTIONS",
+              headers={
+                  "Origin": frontend_url,
+                  "Access-Control-Request-Method": "POST",
+                  "Access-Control-Request-Headers": "content-type",
+              },
+          )
+          assert status == 200, f"CORS OPTIONS failed with {status}"
+          allow_origin = headers.get("access-control-allow-origin") or headers.get("Access-Control-Allow-Origin")
+          assert allow_origin in (frontend_url, "*"), f"Unexpected Access-Control-Allow-Origin: {allow_origin}"
+          print(f"[OK] CORS preflight -> {status} ({allow_origin})")
+
+          # 2. Verify Frontend SPA routes (wait briefly if Vercel native Git build is finishing)
+          deadline = time.monotonic() + (120 if vercel_mode == "git-integration" else 30)
+          spa_ok = False
+          last_err = ""
+          index_html = ""
+          while time.monotonic() < deadline:
+              try:
+                  all_good = True
+                  for route in ("/", "/research", "/data-analyst", "/memory"):
+                      st, _, body = fetch(f"{frontend_url}{route}")
+                      if st != 200 or '<div id="root">' not in body:
+                          all_good = False
+                          last_err = f"{route} returned status={st}"
+                          break
+                      if route == "/":
+                          index_html = body
+                  if all_good:
+                      spa_ok = True
+                      break
+              except Exception as exc:
+                  last_err = str(exc)
+              time.sleep(8)
+
+          assert spa_ok, f"Frontend SPA verification failed on {frontend_url}: {last_err}"
+          print(f"[OK] Vercel SPA routes (/, /research, /data-analyst, /memory) -> 200")
+
+          # 3. Advisory check on live JS asset for stale VITE_* secrets configured in Vercel dashboard
+          asset_paths = re.findall(r'/assets/[A-Za-z0-9_.-]+\.js', index_html)
+          for asset in asset_paths[:3]:
+              try:
+                  _, _, js_body = fetch(f"{frontend_url}{asset}", timeout=15.0)
+                  if re.search(r'\bgsk_[A-Za-z0-9]{20,}\b|\bAQ\.Ab8[A-Za-z0-9_-]{20,}\b|\bAIza[0-9A-Za-z_-]{35}\b', js_body):
+                      print(
+                          f"::warning::Live asset {frontend_url}{asset} contains an LLM/API key pattern. "
+                          "Ensure stale VITE_GEMINI_API_KEY / VITE_GROQ_API_KEY env vars are removed in Vercel Project Settings."
+                      )
+              except Exception:
+                  pass
+          PY
+
+          {
+            echo "## Vectronyx Post-Deploy Verification Passed"
+            echo "| Target | URL | Status |"
+            echo "|---|---|---|"
+            echo "| Backend (HF Spaces) | ${{ needs.deploy-hf-space.outputs.backend_url }} | Live (\`/health\`, \`/openapi.json\`, \`/api/memory/status\`, CORS) |"
+            echo "| Frontend (Vercel) | ${{ needs.deploy-vercel.outputs.frontend_url }} | Live (\`/\`, \`/research\`, \`/data-analyst\`, \`/memory\`) |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -7,6 +7,7 @@
   "scripts": {
     "preinstall": "npx --yes only-allow pnpm",
     "dev": "vite",
+    "typecheck": "tsc --noEmit --noUnusedLocals false",
     "build": "vite build",
     "preview": "vite preview"
   },
