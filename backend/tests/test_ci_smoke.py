@@ -139,3 +139,123 @@ def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():
         '# Never add VITE_GEMINI_API_KEY here',
     ])
     assert mod.scan_text(safe_blob, ".env.example", check_client_vars=True, check_frontend_only_vars=False) == []
+
+
+def test_verify_deployment_script_offline_contract():
+    mod = _load_script("verify_deployment", "scripts/verify_deployment.py")
+    assert mod.space_subdomain("din-esh-kumar/vectronyx-backend") == (
+        "https://din-esh-kumar-vectronyx-backend.hf.space"
+    )
+
+    def fake_http(url: str, *, method: str = "GET", headers=None, timeout: float = 20.0):
+        if method == "OPTIONS":
+            return 200, {"access-control-allow-origin": "*"}, "", 12.4
+        if url.endswith("/health"):
+            return 200, {}, '{"status":"healthy","version":"1.0.0"}', 18.2
+        if url.endswith("/openapi.json"):
+            paths = {p: {} for p in mod.REQUIRED_OPENAPI_PATHS}
+            return 200, {}, f'{{"paths": {__import__("json").dumps(paths)}}}', 25.0
+        if url.endswith(("/api/memory/status", "/api/research/health")):
+            return 200, {}, '{"ok":true}', 15.1
+        if "/assets/" in url:
+            return 200, {"cache-control": "public, max-age=31536000, immutable"}, "console.log('ok');", 9.5
+        return 200, {}, '<!doctype html><html><body><div id="root"></div><script src="/assets/index-abc123.js"></script></body></html>', 22.0
+
+    with patch.object(mod, "http_request", side_effect=fake_http):
+        be_results = mod.verify_backend("https://api.example.test", cors_origin="https://app.example.test", wait_seconds=0)
+        fe_results = mod.verify_frontend("https://app.example.test", wait_seconds=0)
+
+    assert all(r.ok for r in be_results), [r for r in be_results if not r.ok]
+    assert all(r.ok for r in fe_results), [r for r in fe_results if not r.ok]
+
+    md = mod.render_markdown_summary(be_results + fe_results, title="Test Report")
+    assert "## Test Report" in md
+    assert "| `backend` | `GET /health` | **PASS** |" in md
+    assert "| `frontend` | `GET /data-analyst` | **PASS** |" in md
+
+
+def test_github_workflows_parse_and_enforce_hardening_policies():
+    try:
+        import yaml
+    except ImportError:
+        return
+
+    workflows_dir = REPO_ROOT / ".github" / "workflows"
+    workflow_files = sorted(workflows_dir.glob("*.yml"))
+    assert len(workflow_files) >= 6, f"Expected full DevOps workflow suite, found {[p.name for p in workflow_files]}"
+
+    for wf_path in workflow_files:
+        doc = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+        assert isinstance(doc, dict), f"{wf_path.name} did not parse to a mapping"
+        assert "permissions" in doc, f"{wf_path.name} must declare explicit top-level permissions"
+        jobs = doc.get("jobs", {})
+        assert jobs, f"{wf_path.name} has no jobs"
+        for job_id, job in jobs.items():
+            assert "timeout-minutes" in job, f"{wf_path.name}:{job_id} must set timeout-minutes"
+            assert "permissions" in job, f"{wf_path.name}:{job_id} must set least-privilege permissions"
+
+
+def test_security_headers_and_strict_cors_allowlist():
+    client = TestClient(app)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+    assert "camera=()" in (resp.headers.get("permissions-policy") or "")
+
+    # Untrusted origin must NOT be echoed back when explicit allowlist is active
+    evil = client.options(
+        "/api/analyst/generate-dashboard/stream",
+        headers={
+            "Origin": "https://evil-attacker.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert evil.headers.get("access-control-allow-origin") != "https://evil-attacker.example"
+
+
+def test_auth_password_scrypt_hashing_and_constant_time_verify():
+    from app.middleware.auth import hash_password, verify_password
+
+    digest1 = hash_password("CorrectHorseBatteryStaple!")
+    digest2 = hash_password("CorrectHorseBatteryStaple!")
+    assert digest1.startswith("scrypt$")
+    assert digest1 != digest2  # Unique random salt per call
+
+    ok, needs_rehash = verify_password("CorrectHorseBatteryStaple!", digest1)
+    assert ok is True and needs_rehash is False
+
+    bad, bad_rehash = verify_password("WrongPassword123!", digest1)
+    assert bad is False and bad_rehash is False
+
+    legacy_ok, legacy_rehash = verify_password("legacy1234", "legacy1234")
+    assert legacy_ok is True and legacy_rehash is True
+
+
+def test_ssrf_dns_guard_blocks_internal_resolution():
+    import socket
+    from app.modules.research_agent.tools import _is_dns_safe
+
+    fake_loopback = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+    fake_metadata = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 0))]
+    fake_public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    with patch("app.modules.research_agent.tools.socket.getaddrinfo", return_value=fake_loopback):
+        assert _is_dns_safe("rebind.attacker.test") is False
+    with patch("app.modules.research_agent.tools.socket.getaddrinfo", return_value=fake_metadata):
+        assert _is_dns_safe("meta.attacker.test") is False
+    with patch("app.modules.research_agent.tools.socket.getaddrinfo", return_value=fake_public):
+        assert _is_dns_safe("example.com") is True
+
+
+def test_csv_upload_size_limit_returns_413():
+    from app.modules.data_analyst import routes as analyst_routes
+
+    client = TestClient(app)
+    with patch.object(analyst_routes, "MAX_UPLOAD_BYTES", 32):
+        resp = client.post(
+            "/api/analyst/profile",
+            files={"file": ("huge.csv", b"a,b\n" + b"1,2\n" * 30, "text/csv")},
+        )
+    assert resp.status_code == 413

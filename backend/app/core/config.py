@@ -63,9 +63,17 @@ class Settings:
     MAX_SEARCH_RESULTS: int = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
     MAX_SCRAPE_DEPTH: int = int(os.getenv("MAX_SCRAPE_DEPTH", "2"))
 
+    # Upload & Input Guardrails
+    MAX_CSV_UPLOAD_MB: int = int(os.getenv("MAX_CSV_UPLOAD_MB", "25"))
+
     # CORS
     ALLOWED_ORIGINS: List[str] = [
-        origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+        origin.strip()
+        for origin in os.getenv(
+            "ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,https://vectronyx.vercel.app",
+        ).split(",")
+        if origin.strip()
     ]
 
 settings = Settings()

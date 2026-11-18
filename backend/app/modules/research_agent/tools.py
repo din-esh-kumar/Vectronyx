@@ -2,6 +2,7 @@
 import asyncio
 import ipaddress
 import logging
+import socket
 import urllib.parse
 from typing import List, Union, Any, Dict, Callable
 import httpx
@@ -115,22 +116,80 @@ def search_web(query: str, max_results: int = 4) -> List[ResearchSource]:
     return sources
 
 
+def _is_disallowed_ip(ip: ipaddress._BaseAddress) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _is_dns_safe(hostname: str) -> bool:
+    """Resolve hostname via DNS and reject if any resolved IP is internal/private."""
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    if not addr_infos:
+        return False
+    for info in addr_infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if _is_disallowed_ip(ip):
+                return False
+        except ValueError:
+            return False
+    return True
+
+
 async def scrape_page(url: str, max_chars: int = 1500) -> str:
     """
     Extracts sanitized, clean article text using Trafilatura.
     Strips tracking scripts, ads, and navigation chrome.
-    Validates redirects to prevent open-redirect SSRF bypasses.
+    Validates DNS resolution and every redirect hop BEFORE requesting to prevent
+    SSRF, DNS rebinding, and open-redirect internal network probing.
     """
     if not is_safe_url(url):
         return "Extraction skipped: restricted or invalid URL."
 
+    max_redirects = 5
+    current_url = url.strip()
+
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VectronyxBot/1.0"}) as client:
-            resp = await client.get(url)
-            # Re-verify final redirected destination is safe against internal network probing
-            if not is_safe_url(str(resp.url)):
+        async with httpx.AsyncClient(
+            timeout=8.0,
+            follow_redirects=False,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VectronyxBot/1.0"},
+        ) as client:
+            resp = None
+            for _ in range(max_redirects + 1):
+                if not is_safe_url(current_url):
+                    return "Extraction skipped: restricted or invalid URL."
+                parsed = urllib.parse.urlparse(current_url)
+                hostname = (parsed.hostname or "").lower().strip()
+                try:
+                    ipaddress.ip_address(hostname)
+                except ValueError:
+                    dns_ok = await asyncio.to_thread(_is_dns_safe, hostname)
+                    if not dns_ok:
+                        return "Extraction skipped: restricted or invalid URL."
+
+                resp = await client.get(current_url)
+                location = resp.headers.get("location") if hasattr(resp, "headers") else None
+                if getattr(resp, "is_redirect", False) is True and isinstance(location, str) and location:
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    continue
+                break
+
+            if resp is not None and not is_safe_url(str(resp.url)):
                 return "Extraction skipped: restricted or invalid URL."
-            if resp.status_code == 200:
+            if resp is not None and resp.status_code == 200:
                 extracted = trafilatura.extract(resp.text, include_comments=False, include_tables=True)
                 if extracted:
                     return extracted[:max_chars].strip()

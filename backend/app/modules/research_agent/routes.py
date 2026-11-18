@@ -30,7 +30,6 @@ async def stream_research_endpoint(req: ResearchStreamRequest):
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
         }
     )
 

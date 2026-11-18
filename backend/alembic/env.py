@@ -32,7 +32,18 @@ if config.config_file_name is not None:
 # DB URL
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-print("🔥 ALEMBIC USING DB:", DATABASE_URL)
+
+def _redact_db_url(raw_url: str | None) -> str:
+    if not raw_url:
+        return "<unconfigured>"
+    from urllib.parse import urlsplit
+    parsed = urlsplit(raw_url)
+    host = parsed.hostname or "unknown"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{parsed.scheme}://***@{host}{port}{parsed.path}"
+
+
+print("Alembic target database:", _redact_db_url(DATABASE_URL))
 
 # Fix % issue
 if DATABASE_URL:

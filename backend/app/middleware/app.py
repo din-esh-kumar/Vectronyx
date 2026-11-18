@@ -7,7 +7,7 @@ backend_root = str(Path(__file__).resolve().parent.parent.parent)
 if backend_root not in sys.path:
     sys.path.insert(0, backend_root)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from app.core.config import settings
@@ -20,14 +20,34 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Vectronyx AI Workbench API")
 
-# ✅ CORS FIX
+# Explicit CORS allowlist (never combine wildcard '*' with allow_credentials=True)
+_allowed_origins = settings.ALLOWED_ORIGINS or [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://vectronyx.vercel.app",
+]
+_wildcard_cors = "*" in _allowed_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all (for dev & prod cross-origin)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"] if _wildcard_cors else _allowed_origins,
+    allow_origin_regex=None if _wildcard_cors else r"^https://vectronyx(?:-[a-z0-9-]+)?\.vercel\.app$",
+    allow_credentials=not _wildcard_cors,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if forwarded_proto == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 app.include_router(auth_router, prefix="/auth")
 app.include_router(analyst_router, prefix="/api/analyst")
