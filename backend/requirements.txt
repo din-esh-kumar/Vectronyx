@@ -58,7 +58,7 @@ trafilatura>=2.3.1                # Clean article text extraction
 # ----------------------------
 # Pydantic & Validation
 # ----------------------------
-pydantic>=2.10.0                  # Data validation
+pydantic>=2.14.3                  # Data validation
 pydantic-settings>=2.4.0          # BaseSettings for config
 
 # ----------------------------
