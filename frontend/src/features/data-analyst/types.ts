@@ -185,6 +185,25 @@ export interface ExecutiveDossier {
   methodological_notes: string[];
 }
 
+export interface RefinementIterationRecord {
+  iteration: number;
+  score: number;
+  rubric_scores?: Record<string, number>;
+  critiques_found?: string[];
+  improvements_applied?: string[];
+  verdict: string;
+}
+
+export interface PowerBiPageBlueprint {
+  page_number: number;
+  name: string;
+  dimensions: string;
+  purpose: string;
+  slicers?: string[];
+  kpis?: string[];
+  visuals?: string[];
+}
+
 export interface DashboardPlan {
   title: string;
   summary: string;
@@ -199,4 +218,8 @@ export interface DashboardPlan {
   focused_metrics?: string[];
   focused_dimensions?: string[];
   analytical_intent?: string;
+  quality_score?: number | null;
+  refinement_iterations_run?: number;
+  refinement_history?: RefinementIterationRecord[];
+  powerbi_pages?: PowerBiPageBlueprint[];
 }

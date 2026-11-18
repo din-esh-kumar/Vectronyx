@@ -78,7 +78,7 @@ async def _execute_with_groq(
     model: Optional[str] = None,
     max_retries: int = 3,
     temperature: float = 0.2,
-    max_tokens: int = 4096,
+    max_tokens: int = 16384,
     mode: Optional[Any] = None,
 ) -> T:
     groq_model = model or settings.GROQ_MODEL or "openai/gpt-oss-120b"
@@ -103,6 +103,26 @@ async def _execute_with_groq(
         )
     except Exception as e:
         err_str = str(e).lower()
+        # If Groq free-tier TPM (8K) rejects prompt + max_tokens (HTTP 413), step down max_tokens on the active model
+        if (
+            "max_tokens" in err_str
+            or "request too large" in err_str
+            or "tokens per minute" in err_str
+            or "error code: 413" in err_str
+        ) and max_tokens > 2500:
+            stepped_tokens = 2500
+            logger.info(
+                f"Groq {groq_model} hit TPM/size limit with max_tokens={max_tokens}; retrying with max_tokens={stepped_tokens}..."
+            )
+            client = get_groq_instructor(mode=target_mode)
+            return await client.create(
+                response_model=response_model,
+                messages=cast(Any, messages),
+                model=groq_model,
+                max_retries=max_retries,
+                temperature=temperature,
+                max_tokens=stepped_tokens,
+            )
         tool_calling_err_patterns = [
             "tool choice is required",
             "tool_use_failed",
@@ -122,7 +142,7 @@ async def _execute_with_groq(
                 model=groq_model,
                 max_retries=max_retries,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=min(max_tokens, 4096),
             )
         raise
 
@@ -133,11 +153,11 @@ async def _execute_with_gemini(
     model: Optional[str] = None,
     max_retries: int = 3,
     temperature: float = 0.2,
-    max_tokens: int = 4096,
+    max_tokens: int = 16384,
 ) -> T:
     client = get_genai_instructor()
-    gemini_model = model or settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
-    fallback_model = "gemini-2.5-flash" if gemini_model == "gemini-3.5-flash-lite" else "gemini-3.5-flash-lite"
+    gemini_model = model or settings.GEMINI_MODEL or "gemini-3.8-flash"
+    fallback_model = "gemini-3.8-flash" if gemini_model != "gemini-3.8-flash" else "gemini-3.5-flash-lite"
     try:
         return await client.create(
             response_model=response_model,
@@ -145,6 +165,7 @@ async def _execute_with_gemini(
             model=gemini_model,
             max_retries=max_retries,
             temperature=temperature,
+            max_tokens=max_tokens,
         )
     except Exception as e:
         logger.warning(f"Gemini {gemini_model} failed ({e}); falling back to {fallback_model}")
@@ -154,6 +175,7 @@ async def _execute_with_gemini(
             model=fallback_model,
             max_retries=max_retries,
             temperature=temperature,
+            max_tokens=max_tokens,
         )
 
 
@@ -166,7 +188,7 @@ async def generate_structured(
     model: Optional[str] = None,
     max_retries: int = 3,
     temperature: float = 0.2,
-    max_tokens: int = 4096,
+    max_tokens: int = 16384,
 ) -> T:
     """
     Synthesizes guaranteed type-safe Pydantic structured output using Instructor.

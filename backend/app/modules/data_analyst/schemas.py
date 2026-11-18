@@ -178,6 +178,80 @@ class ExecutiveDossier(BaseModel):
     correlation_matrix: Optional[CorrelationMatrixData] = None
     segment_benchmarks: List[SegmentBenchmark] = []
 
+class RefinementIterationRecord(BaseModel):
+    iteration: int
+    score: float
+    rubric_scores: Dict[str, float] = {}
+    critiques_found: List[str] = []
+    improvements_applied: List[str] = []
+    verdict: str = "needs_refinement"  # "needs_refinement" | "expert_certified"
+
+
+class ReportCritique(BaseModel):
+    overall_score: float = Field(..., ge=0.0, le=100.0)
+    empirical_grounding: float = Field(..., ge=0.0, le=100.0)
+    executive_depth: float = Field(..., ge=0.0, le=100.0)
+    statistical_rigor: float = Field(..., ge=0.0, le=100.0)
+    visual_storytelling: float = Field(..., ge=0.0, le=100.0)
+    powerbi_dax_readiness: float = Field(..., ge=0.0, le=100.0)
+    actionability_roi: float = Field(..., ge=0.0, le=100.0)
+    critical_defects: List[str] = []
+    concrete_upgrade_directives: List[str] = []
+    dax_and_powerbi_upgrades: List[str] = []
+    passes_principal_bar: bool = False
+
+
+class LLMChartVisualDraft(BaseModel):
+    """Lean chart schema for LLM generation (series_data is computed deterministically by Pandas)."""
+    id: str
+    title: str
+    chart_type: str
+    x_axis: str
+    y_axis: str
+    aggregation: str = "sum"
+    description: str
+    selection_reason: Optional[str] = None
+    key_insight: Optional[str] = None
+
+
+class LLMExecutiveDossierDraft(BaseModel):
+    """Lean executive narrative schema for LLM generation (quantitative matrices computed deterministically)."""
+    executive_verdict: str
+    situation: str
+    complication: str
+    resolution: str
+    data_integrity_score: float = 100.0
+    strategic_initiatives: List[StrategicInitiative] = []
+    risk_matrix: List[RiskAssessment] = []
+    methodological_notes: List[str] = []
+
+
+class LLMDashboardDraft(BaseModel):
+    """Token-efficient structured output schema for LLM planning & N-iteration refinement."""
+    title: str
+    summary: str
+    dataset_name: str = "Dataset"
+    kpis: List[KPISpec]
+    visuals: List[LLMChartVisualDraft]
+    dossier: Optional[LLMExecutiveDossierDraft] = None
+    dax_script: str = ""
+    powerquery_m: str = ""
+    tableau_calculated_fields: List[Dict[str, str]] = []
+
+    def to_dashboard_plan(self) -> "DashboardPlan":
+        return DashboardPlan(
+            title=self.title,
+            summary=self.summary,
+            dataset_name=self.dataset_name,
+            kpis=self.kpis,
+            visuals=[ChartVisualSpec(**v.model_dump()) for v in self.visuals],
+            dossier=ExecutiveDossier(**self.dossier.model_dump()) if self.dossier else None,
+            dax_script=self.dax_script,
+            powerquery_m=self.powerquery_m,
+            tableau_calculated_fields=self.tableau_calculated_fields,
+        )
+
+
 class DashboardPlan(BaseModel):
     title: str
     summary: str
@@ -192,8 +266,15 @@ class DashboardPlan(BaseModel):
     focused_metrics: List[str] = []
     focused_dimensions: List[str] = []
     analytical_intent: Optional[str] = None
+    quality_score: Optional[float] = None
+    refinement_iterations_run: int = 0
+    refinement_history: List[RefinementIterationRecord] = []
+    powerbi_pages: List[Dict[str, Any]] = []
+
 
 class DashboardGenerateRequest(BaseModel):
     prompt: str = Field(..., description="User prompt describing analysis or dashboard requirements")
     csv_data: str = Field(..., description="Raw CSV string content")
     dataset_name: Optional[str] = "dataset.csv"
+    refinement_iterations: int = Field(3, ge=1, le=8, description="Number of iterative peer-review & refinement passes")
+    target_quality_score: float = Field(92.0, ge=75.0, le=99.0, description="Target Principal Analyst rubric score")

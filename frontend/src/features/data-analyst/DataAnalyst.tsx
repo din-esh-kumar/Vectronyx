@@ -149,6 +149,8 @@ export default function DataAnalyst() {
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [streamingStatus, setStreamingStatus] = useState<string>("");
+  const [iterationLog, setIterationLog] = useState<string[]>([]);
+  const [refinementIterations, setRefinementIterations] = useState<number>(3);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [dashboard, setDashboard] = useState<DashboardPlan | null>(() =>
     initialSample === "saas"
@@ -264,7 +266,8 @@ export default function DataAnalyst() {
       return;
     }
     setLoading(true);
-    setStreamingStatus("Initiating statistical profiling...");
+    setStreamingStatus(`Initiating ${refinementIterations}-pass Principal Analyst pipeline (16K max tokens)...`);
+    setIterationLog([]);
     setErrorMsg("");
 
     try {
@@ -274,6 +277,8 @@ export default function DataAnalyst() {
         fd.append("file", new Blob([csvContent], { type: "text/csv" }), datasetFilename);
         fd.append("prompt", userPrompt);
         fd.append("dataset_name", datasetFilename);
+        fd.append("refinement_iterations", String(refinementIterations));
+        fd.append("target_quality_score", "92");
         return fd;
       };
 
@@ -290,6 +295,7 @@ export default function DataAnalyst() {
           {
             onStatus: (data) => {
               setStreamingStatus(data.message);
+              setIterationLog((prev) => [...prev.slice(-7), data.message]);
               toast.loading(data.message, { id: "analyst-toast" });
             },
             onComplete: (completedPlan) => {
@@ -666,33 +672,75 @@ export default function DataAnalyst() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-amber-500/15">
-            <div className="min-w-0 flex-1">
-              {loading && streamingStatus && (
-                <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400" />
-                  <span className="truncate">{streamingStatus}</span>
-                </div>
-              )}
+          <div className="space-y-3 pt-3 border-t border-amber-500/15">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                <span className="text-amber-300/90 font-semibold">Refinement Passes (16K Max Tokens):</span>
+                {[
+                  { n: 1, label: "1× Draft" },
+                  { n: 3, label: "3× Senior" },
+                  { n: 5, label: "5× Principal" },
+                  { n: 8, label: "8× Boardroom" },
+                ].map((opt) => (
+                  <button
+                    key={opt.n}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setRefinementIterations(opt.n)}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      refinementIterations === opt.n
+                        ? "bg-amber-500/25 text-amber-200 border-amber-400/60 font-bold"
+                        : "bg-violet-950/50 text-violet-300/75 border-violet-500/20 hover:border-amber-400/35"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] font-mono text-emerald-300/80">
+                Target ≥ 92/100 · 3-Page Power BI (.pbip)
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={handleGenerateDashboard}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30 shrink-0"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
-                  <span>Analyzing...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-[#E8A276]" />
-                  <span>Generate Analysis Report</span>
-                </>
-              )}
-            </button>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                {loading && streamingStatus && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400" />
+                      <span className="truncate">{streamingStatus}</span>
+                    </div>
+                    {iterationLog.length > 1 && (
+                      <div className="max-h-20 overflow-y-auto space-y-0.5 pl-5 text-[10px] font-mono text-violet-300/70">
+                        {iterationLog.slice(0, -1).map((line, i) => (
+                          <div key={i} className="truncate">
+                            ✓ {line}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateDashboard}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30 shrink-0"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
+                    <span>Refining ({refinementIterations}×)...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-[#E8A276]" />
+                    <span>Generate Principal Report ({refinementIterations}×)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -714,6 +762,18 @@ export default function DataAnalyst() {
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-violet-900/50 text-violet-300 border border-violet-500/30">
                   Data Integrity: {dossier?.data_integrity_score ?? 100}%
                 </span>
+                {typeof dashboard.quality_score === "number" && (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${
+                      dashboard.quality_score >= 92
+                        ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40"
+                        : "bg-amber-950/60 text-amber-300 border-amber-500/40"
+                    }`}
+                  >
+                    Principal Quality: {dashboard.quality_score.toFixed(1)}/100
+                    {dashboard.refinement_iterations_run ? ` (${dashboard.refinement_iterations_run}× Pass)` : ""}
+                  </span>
+                )}
                 {audit && (
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-emerald-950/50 text-emerald-300 border border-emerald-500/30">
                     {audit.total_rows.toLocaleString()} Rows × {audit.total_columns} Cols ({audit.completeness_pct.toFixed(1)}% Complete)
@@ -854,6 +914,80 @@ export default function DataAnalyst() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Iterative Peer-Review Quality Audit Trail */}
+              {dashboard.refinement_history && dashboard.refinement_history.length > 0 && (
+                <div className="p-5 rounded-2xl glass-card border border-emerald-500/25 space-y-4 print-break-avoid">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-sm font-bold text-white font-display">
+                        Principal Peer-Review &amp; Iterative Refinement Audit
+                      </h4>
+                    </div>
+                    <span className="text-xs font-mono text-emerald-300">
+                      Score Progression:{" "}
+                      {dashboard.refinement_history.map((r) => `${r.score.toFixed(0)}`).join(" → ")} / 100
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const latest = dashboard.refinement_history[dashboard.refinement_history.length - 1];
+                    const rubricEntries = Object.entries(latest.rubric_scores || {});
+                    return (
+                      <>
+                        {rubricEntries.length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                            {rubricEntries.map(([axis, val]) => (
+                              <div
+                                key={axis}
+                                className="p-2.5 rounded-xl bg-violet-950/45 border border-violet-500/20 space-y-1"
+                              >
+                                <div className="text-[10px] font-mono text-violet-300/75 capitalize truncate">
+                                  {axis.replace(/_/g, " ")}
+                                </div>
+                                <div className="text-sm font-extrabold font-mono text-white">
+                                  {Number(val).toFixed(0)}/100
+                                </div>
+                                <div className="h-1.5 rounded-full bg-violet-950 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-amber-400 to-emerald-400"
+                                    style={{ width: `${Math.min(100, Math.max(0, Number(val)))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                          {dashboard.refinement_history.map((rec) => (
+                            <div
+                              key={rec.iteration}
+                              className="p-3 rounded-xl bg-violet-950/35 border border-violet-500/20 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between font-mono text-[11px]">
+                                <span className="font-bold text-amber-300">Pass #{rec.iteration}</span>
+                                <span className="text-emerald-300 font-bold">
+                                  {rec.score.toFixed(1)}/100 ·{" "}
+                                  {rec.verdict === "expert_certified" ? "Certified" : "Refined"}
+                                </span>
+                              </div>
+                              {rec.improvements_applied && rec.improvements_applied.length > 0 && (
+                                <ul className="space-y-0.5 text-[11px] text-violet-200/80 list-disc pl-4">
+                                  {rec.improvements_applied.slice(0, 3).map((imp, idx) => (
+                                    <li key={idx}>{imp}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1198,6 +1332,48 @@ export default function DataAnalyst() {
                     </button>
                   </div>
                 </div>
+
+                {/* 3-Page Executive Power BI Architecture Blueprint */}
+                {dashboard.powerbi_pages && dashboard.powerbi_pages.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/25 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-mono font-bold text-amber-300 uppercase tracking-wider">
+                        3-Page Executive Power BI (.pbip) Architecture + Custom Corporate Theme
+                      </div>
+                      <span className="text-[11px] font-mono text-emerald-300">
+                        TMSL v1567 · 4 DAX Display Folders · Interactive Slicers
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      {dashboard.powerbi_pages.map((pg) => (
+                        <div
+                          key={pg.page_number}
+                          className="p-3.5 rounded-xl bg-violet-950/50 border border-violet-500/25 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-white font-display">
+                              Page {pg.page_number}: {pg.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-amber-300 shrink-0">
+                              {pg.dimensions}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-violet-200/75 leading-relaxed">{pg.purpose}</p>
+                          {pg.slicers && pg.slicers.length > 0 && (
+                            <div className="text-[10px] font-mono text-emerald-300">
+                              Slicers: {pg.slicers.join(", ")}
+                            </div>
+                          )}
+                          {pg.visuals && pg.visuals.length > 0 && (
+                            <div className="text-[10px] font-mono text-violet-300/80">
+                              Containers: {pg.visuals.join(" · ")}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Power BI Visual Architecture Blueprint */}
                 {dashboard.visuals?.length > 0 && (

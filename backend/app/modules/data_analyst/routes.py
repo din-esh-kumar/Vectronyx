@@ -6,6 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
+from app.core.config import settings
 from app.modules.data_analyst.schemas import (
     DatasetProfile,
     DashboardPlan,
@@ -22,6 +23,35 @@ from app.modules.data_analyst.export_tableau import generate_tableau_twbx_archiv
 logger = logging.getLogger("vectronyx.analyst_router")
 router = APIRouter(tags=["Data Analyst & Dashboard Generator"])
 
+MAX_UPLOAD_BYTES = max(1, settings.MAX_CSV_UPLOAD_MB) * 1024 * 1024
+
+
+async def _read_upload_bounded(file: UploadFile) -> str:
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Uploaded file exceeds the {settings.MAX_CSV_UPLOAD_MB} MB size limit.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
+def _validate_raw_csv_size(raw_csv: str) -> str:
+    if len(raw_csv.encode("utf-8", errors="ignore")) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV payload exceeds the {settings.MAX_CSV_UPLOAD_MB} MB size limit.",
+        )
+    return raw_csv
+
 
 def _sanitize_filename_base(dataset_name: Optional[str], default: str = "Vectronyx_Dashboard") -> str:
     if not dataset_name:
@@ -37,13 +67,14 @@ async def upload_and_profile_dataset(file: UploadFile = File(...)):
     and runs IsolationForest anomaly detection.
     """
     try:
-        content_bytes = await file.read()
-        csv_text = content_bytes.decode("utf-8", errors="replace")
+        csv_text = await _read_upload_bounded(file)
         _, profile, _ = profile_dataset(csv_text)
         return profile
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error profiling dataset: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Failed to profile CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail="Failed to profile CSV dataset.")
 
 
 @router.post("/generate-dashboard", response_model=DashboardPlan)
@@ -51,35 +82,40 @@ async def generate_dashboard_endpoint(
     file: Optional[UploadFile] = File(None),
     prompt: str = Form(...),
     dataset_name: Optional[str] = Form("dataset.csv"),
-    raw_csv: Optional[str] = Form(None)
+    raw_csv: Optional[str] = Form(None),
+    refinement_iterations: int = Form(3),
+    target_quality_score: float = Form(92.0),
 ):
     """
-    Generates an executive dashboard plan with KPIs, visual series aggregations,
-    IsolationForest anomaly scores, DAX measures, and Tableau formulas.
-    Accepts either multipart file upload or raw_csv string.
+    Generates an executive dashboard plan refined across N Principal Peer-Review
+    iterations (max 16K tokens per pass) with KPIs, visual series aggregations,
+    IsolationForest anomaly scores, enterprise DAX measures, and 3-page Power BI blueprint.
     """
     try:
         csv_text = ""
         if file:
-            content_bytes = await file.read()
-            csv_text = content_bytes.decode("utf-8", errors="replace")
+            csv_text = await _read_upload_bounded(file)
             dataset_name = file.filename or dataset_name
         elif raw_csv:
-            csv_text = raw_csv
+            csv_text = _validate_raw_csv_size(raw_csv)
         else:
             raise HTTPException(status_code=400, detail="Either 'file' or 'raw_csv' must be provided.")
 
+        clamped_iters = max(1, min(8, refinement_iterations))
+        clamped_target = max(75.0, min(99.0, target_quality_score))
         dashboard_plan = await generate_complete_dashboard(
             csv_text=csv_text,
             user_prompt=prompt,
-            dataset_name=dataset_name or "dataset.csv"
+            dataset_name=dataset_name or "dataset.csv",
+            refinement_iterations=clamped_iters,
+            target_quality_score=clamped_target,
         )
         return dashboard_plan
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error generating dashboard: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate dashboard: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate dashboard.")
 
 
 @router.post("/generate-dashboard/stream")
@@ -87,43 +123,46 @@ async def generate_dashboard_stream_endpoint(
     file: Optional[UploadFile] = File(None),
     prompt: str = Form(...),
     dataset_name: Optional[str] = Form("dataset.csv"),
-    raw_csv: Optional[str] = Form(None)
+    raw_csv: Optional[str] = Form(None),
+    refinement_iterations: int = Form(3),
+    target_quality_score: float = Form(92.0),
 ):
     """
-    Server-Sent Events (SSE) telemetry stream for executive dashboard synthesis:
-    Emits dataset distribution profiling -> IsolationForest anomaly scan ->
-    Groq LPU synthesis -> final DashboardPlan JSON.
+    Server-Sent Events (SSE) telemetry stream for N-iteration Principal Analyst
+    dashboard synthesis and 3-page Executive Power BI architecture generation.
     """
     try:
         csv_text = ""
         if file:
-            content_bytes = await file.read()
-            csv_text = content_bytes.decode("utf-8", errors="replace")
+            csv_text = await _read_upload_bounded(file)
             dataset_name = file.filename or dataset_name
         elif raw_csv:
-            csv_text = raw_csv
+            csv_text = _validate_raw_csv_size(raw_csv)
         else:
             raise HTTPException(status_code=400, detail="Either 'file' or 'raw_csv' must be provided.")
 
+        clamped_iters = max(1, min(8, refinement_iterations))
+        clamped_target = max(75.0, min(99.0, target_quality_score))
         return StreamingResponse(
             generate_complete_dashboard_stream(
                 csv_text=csv_text,
                 user_prompt=prompt,
-                dataset_name=dataset_name or "dataset.csv"
+                dataset_name=dataset_name or "dataset.csv",
+                refinement_iterations=clamped_iters,
+                target_quality_score=clamped_target,
             ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache, no-transform",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
-                "Access-Control-Allow-Origin": "*",
             }
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error starting dashboard stream: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to start stream: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to start dashboard stream.")
 
 
 
@@ -141,10 +180,9 @@ async def export_powerbi_endpoint(
     try:
         csv_text = ""
         if file:
-            content_bytes = await file.read()
-            csv_text = content_bytes.decode("utf-8", errors="replace")
+            csv_text = await _read_upload_bounded(file)
         elif raw_csv:
-            csv_text = raw_csv
+            csv_text = _validate_raw_csv_size(raw_csv)
         else:
             raise HTTPException(status_code=400, detail="CSV data required for Power BI export.")
 
@@ -167,7 +205,7 @@ async def export_powerbi_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error exporting Power BI package: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to export Power BI: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to export Power BI package.")
 
 
 @router.post("/export/tableau")
@@ -183,10 +221,9 @@ async def export_tableau_endpoint(
     try:
         csv_text = ""
         if file:
-            content_bytes = await file.read()
-            csv_text = content_bytes.decode("utf-8", errors="replace")
+            csv_text = await _read_upload_bounded(file)
         elif raw_csv:
-            csv_text = raw_csv
+            csv_text = _validate_raw_csv_size(raw_csv)
         else:
             raise HTTPException(status_code=400, detail="CSV data required for Tableau export.")
 
@@ -209,7 +246,7 @@ async def export_tableau_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error exporting Tableau package: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to export Tableau: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to export Tableau package.")
 
 
 @router.post("/export/dossier")
@@ -236,5 +273,5 @@ async def export_dossier_endpoint(plan_json: str = Form(...)):
         raise
     except Exception as e:
         logger.error(f"Error exporting Executive Dossier: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to export Dossier: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to export Executive Dossier.")
 

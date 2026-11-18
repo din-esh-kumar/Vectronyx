@@ -34,6 +34,7 @@ from app.modules.data_analyst.schemas import (
     RiskAssessment,
     ExecutiveDossier,
     DashboardPlan,
+    LLMDashboardDraft,
 )
 from app.modules.data_analyst.prompts import (
     DASHBOARD_PLANNER_SYSTEM_PROMPT,
@@ -923,6 +924,15 @@ in
     )
 
 
+from app.modules.data_analyst.refiner import (
+    DEFAULT_REFINEMENT_ITERATIONS,
+    DEFAULT_TARGET_QUALITY_SCORE,
+    DEEP_PLANNER_MAX_TOKENS,
+    enrich_plan_for_powerbi,
+    run_iterative_refinement_stream,
+)
+
+
 async def call_llm_dashboard_planner(
     schema_summary: str,
     row_count: int,
@@ -933,8 +943,8 @@ async def call_llm_dashboard_planner(
     deep_stats_summary: str = "",
 ) -> Optional[DashboardPlan]:
     """
-    Invokes Instructor (wrapping Google Gemini / Groq Cloud) to synthesize a guaranteed
-    type-safe DashboardPlan Pydantic model with automatic self-correcting retries.
+    Invokes Instructor (wrapping Google Gemini / Groq Cloud) with maximum output
+    tokens (16K) to synthesize a guaranteed type-safe DashboardPlan Pydantic model.
     """
     user_content = build_dashboard_user_prompt(
         dataset_name=dataset_name,
@@ -946,14 +956,17 @@ async def call_llm_dashboard_planner(
         deep_stats_summary=deep_stats_summary,
     )
     try:
-        plan = await generate_structured(
-            response_model=DashboardPlan,
+        result = await generate_structured(
+            response_model=LLMDashboardDraft,
             system_prompt=DASHBOARD_PLANNER_SYSTEM_PROMPT,
             user_prompt=user_content,
             max_retries=3,
             temperature=0.2,
+            max_tokens=DEEP_PLANNER_MAX_TOKENS,
         )
-        return plan
+        if isinstance(result, DashboardPlan):
+            return result
+        return result.to_dashboard_plan()
     except Exception as e:
         logger.warning(f"Instructor structured dashboard planning failed: {e}")
         return None
@@ -1150,6 +1163,19 @@ def generate_dossier_markdown(plan: DashboardPlan) -> str:
             for t in plan.tableau_calculated_fields:
                 md += f"- **{t.get('caption', 'Calculation')}**: `{t.get('formula', '')}`\n"
 
+    if plan.refinement_history:
+        md += f"""
+---
+
+### 15. PRINCIPAL QUALITY CERTIFICATION & ITERATIVE REFINEMENT AUDIT
+* **Final Quality Score:** `{plan.quality_score:.1f}/100` across `{plan.refinement_iterations_run}` refinement pass(es)
+| Pass | Score | Verdict | Key Critiques & Upgrades |
+| :--- | :--- | :--- | :--- |
+"""
+        for rec in plan.refinement_history:
+            summary_notes = "; ".join((rec.improvements_applied or rec.critiques_found)[:2]) or "Verified"
+            md += f"| Iteration {rec.iteration} | `{rec.score:.1f}/100` | `{rec.verdict}` | {summary_notes} |\n"
+
     return md
 
 
@@ -1225,14 +1251,21 @@ def _assemble_expert_plan(
     return plan
 
 
-async def generate_complete_dashboard(csv_text: str, user_prompt: str, dataset_name: str = "dataset.csv") -> DashboardPlan:
+async def generate_complete_dashboard(
+    csv_text: str,
+    user_prompt: str,
+    dataset_name: str = "dataset.csv",
+    refinement_iterations: int = DEFAULT_REFINEMENT_ITERATIONS,
+    target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
+) -> DashboardPlan:
     """
-    Master Principal Data Analyst Pipeline (Prompt-Adaptive & Data-Shape-Driven):
+    Master Principal Data Analyst Pipeline (N-Iteration Self-Refining & Data-Shape-Driven):
     1. Ingests & classifies semantic column roles + runs IsolationForest over non-ID numeric features.
     2. Resolves target metrics, dimensions, and analytical intent from user prompt.
     3. Computes quantiles, correlations, ANOVA segment benchmarks, HHI, and data quality audit.
-    4. Invokes Gemini / Groq LLM planner via Instructor, then peer-reviews & upgrades visual selections.
-    5. Reconciles KPIs against ground-truth and populates data-grounded visual series.
+    4. Invokes Gemini / Groq LLM planner via Instructor at max output tokens (16K).
+    5. Runs N iterations of adversarial Principal Peer Review + max-token refinement until Expert Certified.
+    6. Enriches enterprise Power BI DAX folders, typed Power Query M, and 3-page PBIP layout blueprint.
     """
     raw_df = pd.read_csv(io.StringIO(csv_text))
     roles = classify_dataframe_roles(raw_df)
@@ -1272,35 +1305,66 @@ async def generate_complete_dashboard(csv_text: str, user_prompt: str, dataset_n
         deep_stats_summary=deep_stats_summary,
     )
 
-    return _assemble_expert_plan(
+    def _assemble(candidate: Optional[DashboardPlan]) -> DashboardPlan:
+        return _assemble_expert_plan(
+            df=df,
+            profile=profile,
+            anomalies=anomalies,
+            roles=roles,
+            target_numerics=target_numerics,
+            target_cats=target_cats,
+            intent=intent,
+            user_prompt=user_prompt,
+            dataset_name=dataset_name,
+            diagnostics=diagnostics,
+            concentration=concentration,
+            ground_truth_dict=ground_truth_dict,
+            quality_audit=quality_audit,
+            correlations=correlations,
+            correlation_matrix=correlation_matrix,
+            segment_benchmarks=segment_benchmarks,
+            llm_plan=candidate,
+        )
+
+    assembled = _assemble(llm_plan)
+    final_plan = assembled
+    async for evt_type, payload in run_iterative_refinement_stream(
+        assembled,
         df=df,
-        profile=profile,
-        anomalies=anomalies,
         roles=roles,
         target_numerics=target_numerics,
         target_cats=target_cats,
-        intent=intent,
-        user_prompt=user_prompt,
         dataset_name=dataset_name,
-        diagnostics=diagnostics,
-        concentration=concentration,
-        ground_truth_dict=ground_truth_dict,
-        quality_audit=quality_audit,
-        correlations=correlations,
-        correlation_matrix=correlation_matrix,
-        segment_benchmarks=segment_benchmarks,
-        llm_plan=llm_plan,
-    )
+        user_prompt=user_prompt,
+        schema_summary=schema_summary,
+        ground_truth_summary=ground_truth_summary,
+        deep_stats_summary=deep_stats_summary,
+        assemble_fn=_assemble,
+        max_iterations=refinement_iterations,
+        target_quality_score=target_quality_score,
+        enable_llm_refinement=(llm_plan is not None),
+    ):
+        if evt_type == "done":
+            final_plan = payload
+    return final_plan
 
 
-async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, dataset_name: str = "dataset.csv") -> AsyncGenerator[str, None]:
+async def generate_complete_dashboard_stream(
+    csv_text: str,
+    user_prompt: str,
+    dataset_name: str = "dataset.csv",
+    refinement_iterations: int = DEFAULT_REFINEMENT_ITERATIONS,
+    target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
+) -> AsyncGenerator[str, None]:
     """
-    SSE Telemetry Stream for the Principal Data Analyst & Executive Dashboard Generator.
+    SSE Telemetry Stream for the N-Iteration Principal Data Analyst & Executive Power BI Studio.
     """
+    n_iters = max(1, min(8, int(refinement_iterations or DEFAULT_REFINEMENT_ITERATIONS)))
+
     yield sse_event("status", {
         "step": 1,
         "stage": "profiling",
-        "message": f"Step 1/5: Classifying column semantic roles and profiling '{dataset_name}'..."
+        "message": f"Phase 1/6: Classifying column semantic roles and profiling '{dataset_name}'..."
     })
 
     raw_df = pd.read_csv(io.StringIO(csv_text))
@@ -1311,7 +1375,7 @@ async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, da
     yield sse_event("status", {
         "step": 2,
         "stage": "anomaly_detection",
-        "message": f"Step 2/5: IsolationForest flagged {len(anomalies)} multivariate outliers on non-ID features (Integrity: {profile.data_integrity_score}%)..."
+        "message": f"Phase 2/6: IsolationForest flagged {len(anomalies)} multivariate outliers on non-ID features (Integrity: {profile.data_integrity_score}%)..."
     })
 
     diagnostics = build_expert_statistical_diagnostics(df, target_numerics, roles)
@@ -1326,7 +1390,7 @@ async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, da
     yield sse_event("status", {
         "step": 3,
         "stage": "intent_resolution",
-        "message": f"Step 3/5: Computed quantiles, Pearson/Spearman correlations & ANOVA drivers on [{primary_targets}]..."
+        "message": f"Phase 3/6: Computed quantiles, Pearson/Spearman correlations & ANOVA drivers on [{primary_targets}]..."
     })
 
     target_focus = (
@@ -1347,7 +1411,7 @@ async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, da
     yield sse_event("status", {
         "step": 4,
         "stage": "llm_synthesis",
-        "message": "Step 4/5: Synthesizing Principal Analyst thesis, KPIs, risk governance, and BI formulas..."
+        "message": f"Phase 4/6: Synthesizing initial max-token (16K) Principal Analyst draft & Power BI DAX library..."
     })
 
     llm_plan = await call_llm_dashboard_planner(
@@ -1360,31 +1424,62 @@ async def generate_complete_dashboard_stream(csv_text: str, user_prompt: str, da
         deep_stats_summary=deep_stats_summary,
     )
 
+    def _assemble(candidate: Optional[DashboardPlan]) -> DashboardPlan:
+        return _assemble_expert_plan(
+            df=df,
+            profile=profile,
+            anomalies=anomalies,
+            roles=roles,
+            target_numerics=target_numerics,
+            target_cats=target_cats,
+            intent=intent,
+            user_prompt=user_prompt,
+            dataset_name=dataset_name,
+            diagnostics=diagnostics,
+            concentration=concentration,
+            ground_truth_dict=ground_truth_dict,
+            quality_audit=quality_audit,
+            correlations=correlations,
+            correlation_matrix=correlation_matrix,
+            segment_benchmarks=segment_benchmarks,
+            llm_plan=candidate,
+        )
+
+    assembled = _assemble(llm_plan)
+
     yield sse_event("status", {
         "step": 5,
-        "stage": "series_aggregation",
-        "message": "Step 5/5: Selecting data-matched visual geometries (Pareto, scatter, histogram, cohorts) & compiling Power BI PBIP..."
+        "stage": "iterative_refinement",
+        "message": f"Phase 5/6: Launching up to {n_iters} Principal Peer-Review & max-token refinement passes (Target >= {target_quality_score:.0f}/100)..."
     })
 
-    plan = _assemble_expert_plan(
+    final_plan = assembled
+    async for evt_type, payload in run_iterative_refinement_stream(
+        assembled,
         df=df,
-        profile=profile,
-        anomalies=anomalies,
         roles=roles,
         target_numerics=target_numerics,
         target_cats=target_cats,
-        intent=intent,
-        user_prompt=user_prompt,
         dataset_name=dataset_name,
-        diagnostics=diagnostics,
-        concentration=concentration,
-        ground_truth_dict=ground_truth_dict,
-        quality_audit=quality_audit,
-        correlations=correlations,
-        correlation_matrix=correlation_matrix,
-        segment_benchmarks=segment_benchmarks,
-        llm_plan=llm_plan,
-    )
+        user_prompt=user_prompt,
+        schema_summary=schema_summary,
+        ground_truth_summary=ground_truth_summary,
+        deep_stats_summary=deep_stats_summary,
+        assemble_fn=_assemble,
+        max_iterations=n_iters,
+        target_quality_score=target_quality_score,
+        enable_llm_refinement=(llm_plan is not None),
+    ):
+        if evt_type == "status":
+            yield sse_event("status", {"step": 5, **payload})
+        elif evt_type == "done":
+            final_plan = payload
 
-    yield sse_event("complete", plan.model_dump())
+    yield sse_event("status", {
+        "step": 6,
+        "stage": "powerbi_packaging",
+        "message": f"Phase 6/6: Finalized 3-page Executive Power BI (.pbip) architecture & verified report (Quality: {final_plan.quality_score or 0:.1f}/100)!"
+    })
+
+    yield sse_event("complete", final_plan.model_dump())
 
