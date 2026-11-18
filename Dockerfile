@@ -20,7 +20,7 @@ RUN pnpm run build
 # ------------------------------------------------------------------------------
 # Stage 2: Build Python Backend Virtualenv
 # ------------------------------------------------------------------------------
-FROM python:3.10-slim AS backend-builder
+FROM python:3.15-slim AS backend-builder
 
 WORKDIR /app
 
@@ -44,7 +44,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ------------------------------------------------------------------------------
 # Stage 3: Unified Production Runtime
 # ------------------------------------------------------------------------------
-FROM python:3.10-slim AS runner
+FROM python:3.15-slim AS runner
 
 WORKDIR /app
 
