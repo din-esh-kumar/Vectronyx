@@ -280,7 +280,7 @@ async def test_execute_with_gemini_model_fallback_on_error():
         assert mock_client.create.await_count == 2
         # Second call used fallback model
         second_call_model = mock_client.create.call_args_list[1].kwargs["model"]
-        assert second_call_model == "gemini-2.5-flash"
+        assert second_call_model == "gemini-3.8-flash"
 
 
 # =====================================================================

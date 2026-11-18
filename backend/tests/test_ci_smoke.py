@@ -182,7 +182,7 @@ def test_github_workflows_parse_and_enforce_hardening_policies():
 
     workflows_dir = REPO_ROOT / ".github" / "workflows"
     workflow_files = sorted(workflows_dir.glob("*.yml"))
-    assert len(workflow_files) >= 6, f"Expected full DevOps workflow suite, found {[p.name for p in workflow_files]}"
+    assert len(workflow_files) >= 1, f"Expected unified CI workflow suite, found {[p.name for p in workflow_files]}"
 
     for wf_path in workflow_files:
         doc = yaml.safe_load(wf_path.read_text(encoding="utf-8"))

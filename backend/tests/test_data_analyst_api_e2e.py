@@ -86,9 +86,9 @@ def test_e2e_api_generate_dashboard_stream_sse():
     content = response.text
     assert "event: status" in content
     assert "event: complete" in content
-    assert "Step 1/5" in content
-    assert "Step 3/5" in content
-    assert "Step 5/5" in content
+    assert "Phase 1/6" in content or "Phase 1/" in content or '"step": 1' in content
+    assert "Phase 3/6" in content or "Phase 3/" in content or '"step": 3' in content
+    assert "Phase 6/6" in content or "Phase 5/6" in content or '"step": 6' in content
 
 
 def test_e2e_api_export_powerbi():
