@@ -64,7 +64,7 @@ jobs:
             image_suffix: vectronyx
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Determine whether to push images
         id: push_policy
@@ -80,11 +80,11 @@ jobs:
           echo "image_name=${REGISTRY}/${OWNER_LOWER}/${{ matrix.image_suffix }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry (GHCR)
         if: steps.push_policy.outputs.should_push == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -92,7 +92,7 @@ jobs:
 
       - name: Extract Docker metadata (tags & OCI labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.push_policy.outputs.image_name }}
           tags: |
@@ -105,7 +105,7 @@ jobs:
 
       - name: Build and push (or verify on PR) container image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -126,7 +126,7 @@ jobs:
 
       - name: Generate GitHub Build Provenance Attestation
         if: steps.push_policy.outputs.should_push == 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.push_policy.outputs.image_name }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -149,7 +149,7 @@ jobs:
           echo "Resolved Trivy scan target: $REF"
 
       - name: Scan container image for HIGH/CRITICAL CVEs (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.scan_target.outputs.ref }}
           format: sarif
@@ -160,7 +160,7 @@ jobs:
 
       - name: Upload container vulnerability SARIF
         if: always() && hashFiles(format('trivy-{0}.sarif', matrix.target)) != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-${{ matrix.target }}.sarif
           category: trivy-container-${{ matrix.target }}
