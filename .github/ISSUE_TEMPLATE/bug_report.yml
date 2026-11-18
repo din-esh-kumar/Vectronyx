@@ -1,0 +1,38 @@
+name: Bug Report
+description: Report a defect, regression, or production issue in Vectronyx AI Workbench
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - Frontend (React / Vite)
+        - Backend (FastAPI / AI Modules)
+        - Deployment / CI/CD / DevOps
+        - Database / Supabase / Migrations
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Navigate to...
+        2. Upload / run...
+        3. Observe error...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Stack Trace / Screenshots
+      render: shell

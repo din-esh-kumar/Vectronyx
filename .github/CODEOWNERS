@@ -1,0 +1,15 @@
+# Default repository owner
+* @din-esh-kumar
+
+# CI/CD, DevOps, Security & Infrastructure
+/.github/ @din-esh-kumar
+/scripts/ @din-esh-kumar
+/Dockerfile @din-esh-kumar
+/docker-compose.yml @din-esh-kumar
+/vercel.json @din-esh-kumar
+/render.yaml @din-esh-kumar
+/railway.json @din-esh-kumar
+
+# Core Application Tiers
+/backend/ @din-esh-kumar
+/frontend/ @din-esh-kumar

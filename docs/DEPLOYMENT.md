@@ -72,26 +72,39 @@ Ensure your cloud accounts and environment variables are ready:
    `https://<your-hf-username>-vectronyx-backend.hf.space`
    Verify health at `https://<your-hf-username>-vectronyx-backend.hf.space/health`.
 
-#### B. Automatic GitHub Actions CI/CD Pipeline (Recommended for Merges)
-The repository includes a unified CI/CD workflow in [`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml):
-- **On Pull Requests to `main`**: runs **Security & Secret Scan** (`scripts/ci_secret_scan.py`), **Frontend CI** (`pnpm --dir frontend run typecheck`, Vite production build, bundle secret audit), and **Backend CI** (`compileall` + deterministic offline `pytest` suite with zero API keys required).
-- **On Merge / Push to `main`** (only after all CI gates pass):
-  1. Automatically deploys `backend/` to Hugging Face Spaces (`scripts/deploy_hf_space.py --sdk gradio --wait`) and waits for runtime `RUNNING` + `/health` readiness.
-  2. Automatically deploys the frontend to Vercel via `vercel deploy --prebuilt --prod` if `VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` secrets are configured, or relies on Vercel's native GitHub `main` integration when omitted.
-  3. Runs **Post-Deploy Live Verification** against HF Spaces (`/health`, `/openapi.json`, `/api/memory/status`, CORS `OPTIONS`) and Vercel (`/`, `/research`, `/data-analyst`, `/memory`).
+#### B. Production GitHub Actions CI/CD & DevOps Pipeline Suite
+The repository ships a complete production DevOps automation suite under [`.github/`](../.github/):
+
+| Workflow | Trigger | Responsibilities |
+| :--- | :--- | :--- |
+| [**`ci-cd.yml`**](../.github/workflows/ci-cd.yml) | PR to `main`, Push to `main`, `workflow_dispatch` | Secret & manifest scan → Frontend CI (typecheck, Vite build, bundle size budget, JS secret audit) + Backend CI (Ruff static analysis, `compileall`, Alembic single-head check, offline `pytest` + coverage) → PR Vercel Preview deploy & comment → Optional Alembic DB migrations → Auto-Deploy Backend (HF Spaces + optional Render hook) & Staged Zero-Downtime Vercel Frontend (`--skip-domain` → smoke test → `vercel promote`) → Post-Deploy live contract verification ([`scripts/verify_deployment.py`](../scripts/verify_deployment.py)) → Optional Slack/Discord webhook alert. |
+| [**`security.yml`**](../.github/workflows/security.yml) | PR, Push to `main`, Weekly Monday 04:00 UTC | Vectronyx secret scan + Gitleaks full history scan, CodeQL SAST (Python + JS/TS) uploaded to GitHub Security, `pip-audit` + `pnpm audit --prod`, and Trivy Dockerfile/IaC misconfiguration scan (SARIF). |
+| [**`docker.yml`**](../.github/workflows/docker.yml) | PR (infra/deps), Push to `main`, `v*.*.*` tags | Multi-target Buildx verification & GHCR publishing (`vectronyx`, `vectronyx-backend`, `vectronyx-frontend`) with GHA layer caching, OCI metadata tags, SBOM + GitHub Build Provenance Attestations, and Trivy CVE container scans. |
+| [**`uptime-monitor.yml`**](../.github/workflows/uptime-monitor.yml) | Every 6 hours (`cron: 0 */6 * * *`), manual | Synthetic live production probe (also keeps free HF Spaces warm before 48h sleep). Automatically opens/updates a `production` + `incident` GitHub Issue on outage and auto-closes it on recovery. |
+| [**`rollback.yml`**](../.github/workflows/rollback.yml) | `workflow_dispatch` | One-click emergency rollback: restores HF Spaces backend to any Git SHA/tag, executes instant `vercel rollback` for the frontend, verifies live endpoints post-rollback, and writes an audit summary. |
+| [**`release.yml`**](../.github/workflows/release.yml) | Push of `v*.*.*` tags, manual | Runs secret gate, builds frontend bundle tarball + SHA256 checksums, and creates a categorized GitHub Release (configured via [`.github/release.yml`](../.github/release.yml)). |
+| [**`pr-hygiene.yml`**](../.github/workflows/pr-hygiene.yml) | Pull Requests | Enforces Conventional Commit PR titles, auto-labels PRs via [`.github/labeler.yml`](../.github/labeler.yml), and reports PR review size. |
+
+Repository automation configs also include [`.github/dependabot.yml`](../.github/dependabot.yml) (weekly grouped updates for `pip`, `npm`, `github-actions`, and `docker`), [`.github/CODEOWNERS`](../.github/CODEOWNERS), PR template, and structured Issue templates.
 
 **GitHub Repository Configuration** (**Settings → Secrets and variables → Actions**):
-- **Required Secret**:
+- **Required Secret for Backend Auto-Deploy**:
   - `HF_TOKEN` — Hugging Face Write access token for auto-deploying to HF Spaces.
-- **Optional Secrets** *(only needed if you want GitHub Actions CLI `--prebuilt` deploy instead of Vercel's native Git integration)*:
-  - `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
+- **Optional Secrets** *(enable additional DevOps automation as needed)*:
+  - `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` — enables CI PR preview deployments, zero-downtime staged production promotes (`vercel deploy --prebuilt --prod --skip-domain` → verify → `vercel promote`), and one-click `rollback.yml` frontend rollbacks (when omitted, Vercel's native GitHub integration handles deploys automatically).
+  - `VERCEL_AUTOMATION_BYPASS_SECRET` — allows post-deploy verification to probe Deployment Protection-gated preview/staged URLs.
+  - `DATABASE_URL` — enables automated `alembic upgrade head` migrations before backend deploy (when `AUTO_RUN_MIGRATIONS=true` or manual `run_migrations` input is checked).
+  - `RENDER_DEPLOY_HOOK_URL` — optionally triggers a secondary Render backend deploy on `main`.
+  - `DEPLOY_WEBHOOK_URL` — Slack or Discord incoming webhook URL for deployment and outage alerts.
 - **Optional Variables**:
   - `HF_SPACE_ID` *(defaults to `din-esh-kumar/vectronyx-backend`)*
+  - `HF_SPACE_SDK` *(defaults to `gradio`; set `docker` for HF Pro Docker Spaces)*
   - `FRONTEND_URL` *(defaults to `https://vectronyx.vercel.app`)*
+  - `AUTO_RUN_MIGRATIONS` *(set `true` to run Alembic migrations automatically on `main` pushes)*
   - `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GEMINI_MODEL`, `VITE_GROQ_MODEL`
 
 > [!TIP]
-> Enable GitHub Branch Protection on `main` requiring **`Security & Secret Scan`**, **`Frontend CI (Typecheck, Build & Bundle Audit)`**, and **`Backend CI (Compile & Offline Test Suite)`** so broken PRs or leaked secrets cannot merge.
+> Enable GitHub Branch Protection on `main` requiring **`Security & Secret Scan`**, **`Frontend CI (Typecheck, Build & Bundle Audit)`**, and **`Backend CI (Lint, Compile, Migrations & Tests)`**, and configure a **`production`** GitHub Environment under **Settings → Environments** if you want manual approval gates or deployment history tracking.
 
 In Hugging Face Space **Settings → Variables and secrets**, ensure your runtime secrets (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `SECRET_KEY`) are configured.
 

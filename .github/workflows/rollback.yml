@@ -1,0 +1,171 @@
+name: Emergency Production Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Service(s) to roll back"
+        type: choice
+        default: both
+        options:
+          - both
+          - backend
+          - frontend
+      backend_git_ref:
+        description: "Git commit SHA or tag to restore on HF Spaces backend (e.g. HEAD~1 or v1.0.0)"
+        type: string
+        default: "HEAD~1"
+      vercel_deployment:
+        description: "Optional Vercel deployment URL/ID to roll back to (leave blank to revert to previous production deployment)"
+        type: string
+        default: ""
+      reason:
+        description: "Audit reason for rollback (required for incident trail)"
+        type: string
+        required: true
+
+concurrency:
+  group: vectronyx-production-rollback
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  VERCEL_CLI_VERSION: "66.1.0"
+
+jobs:
+  rollback-backend:
+    name: Rollback Backend (HF Spaces)
+    if: inputs.target == 'both' || inputs.target == 'backend'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ steps.hf_rollback.outputs.backend_url }}
+    permissions:
+      contents: read
+    outputs:
+      backend_url: ${{ steps.hf_rollback.outputs.backend_url }}
+      resolved_sha: ${{ steps.resolve_ref.outputs.sha }}
+    steps:
+      - name: Checkout target rollback revision (${{ inputs.backend_git_ref }})
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and checkout backend_git_ref
+        id: resolve_ref
+        env:
+          TARGET_REF: ${{ inputs.backend_git_ref }}
+        run: |
+          RESOLVED=$(git rev-parse --verify "${TARGET_REF}^{commit}")
+          echo "Rolling back backend to commit: $RESOLVED"
+          git checkout "$RESOLVED"
+          echo "sha=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Hugging Face Hub SDK
+        run: pip install --no-cache-dir "huggingface_hub>=0.26.0"
+
+      - name: Redeploy target revision to Hugging Face Spaces
+        id: hf_rollback
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'din-esh-kumar/vectronyx-backend' }}
+          HF_SPACE_SDK: ${{ vars.HF_SPACE_SDK || 'gradio' }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is required to roll back Hugging Face Spaces."
+            exit 1
+          fi
+          BACKEND_URL=$(python -c "import os, re; o, n = os.environ['HF_SPACE_ID'].split('/', 1); print(f'https://{re.sub(r\"[^a-z0-9-]\", \"-\", o.lower())}-{re.sub(r\"[^a-z0-9-]\", \"-\", n.lower())}.hf.space')")
+          echo "backend_url=$BACKEND_URL" >> "$GITHUB_OUTPUT"
+
+          python scripts/deploy_hf_space.py \
+            --space-id "$HF_SPACE_ID" \
+            --sdk "$HF_SPACE_SDK" \
+            --wait \
+            --wait-timeout 300
+
+          {
+            echo "### Backend Rollback Complete"
+            echo "- **Actor**: \`${{ github.actor }}\`"
+            echo "- **Reason**: ${{ inputs.reason }}"
+            echo "- **Restored Commit**: \`${{ steps.resolve_ref.outputs.sha }}\`"
+            echo "- **Backend URL**: $BACKEND_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rollback-frontend:
+    name: Rollback Frontend (Vercel)
+    if: inputs.target == 'both' || inputs.target == 'frontend'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: ${{ vars.FRONTEND_URL || 'https://vectronyx.vercel.app' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Execute instant Vercel production rollback
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          TARGET_DEPLOYMENT: ${{ inputs.vercel_deployment }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID secrets are required for automated Vercel rollback. Otherwise roll back via the Vercel Dashboard."
+            exit 1
+          fi
+
+          npm install -g "vercel@${VERCEL_CLI_VERSION}"
+          if [ -n "$TARGET_DEPLOYMENT" ]; then
+            vercel rollback "$TARGET_DEPLOYMENT" --yes
+          else
+            vercel rollback --yes
+          fi
+
+          {
+            echo "### Frontend Rollback Complete (Vercel)"
+            echo "- **Actor**: \`${{ github.actor }}\`"
+            echo "- **Reason**: ${{ inputs.reason }}"
+            echo "- **Target**: \`${TARGET_DEPLOYMENT:-previous production deployment}\`"
+            echo "- **Note**: Remember that Vercel rollback pauses auto-assignment until the next \`vercel promote\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-after-rollback:
+    name: Post-Rollback Verification
+    needs: [rollback-backend, rollback-frontend]
+    if: >-
+      always() &&
+      (needs.rollback-backend.result == 'success' || needs.rollback-frontend.result == 'success') &&
+      needs.rollback-backend.result != 'failure' &&
+      needs.rollback-frontend.result != 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify production health after rollback
+        env:
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'din-esh-kumar/vectronyx-backend' }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://vectronyx.vercel.app' }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          python3 scripts/verify_deployment.py \
+            --hf-space-id "$HF_SPACE_ID" \
+            --frontend-url "$FRONTEND_URL" \
+            --wait-seconds 30 \
+            --title "Post-Rollback Production Verification"

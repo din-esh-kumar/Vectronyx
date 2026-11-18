@@ -1,0 +1,175 @@
+name: Docker CI & GHCR Container Delivery
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "Dockerfile"
+      - "backend/Dockerfile"
+      - "frontend/Dockerfile"
+      - "docker-compose.yml"
+      - "backend/requirements.txt"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/nginx.conf"
+      - ".github/workflows/docker.yml"
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: "Push built container images to GitHub Container Registry (GHCR)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: vectronyx-docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-publish:
+    name: Container (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: backend
+            context: ./backend
+            dockerfile: backend/Dockerfile
+            image_suffix: vectronyx-backend
+          - target: frontend
+            context: ./frontend
+            dockerfile: frontend/Dockerfile
+            image_suffix: vectronyx-frontend
+          - target: unified
+            context: .
+            dockerfile: Dockerfile
+            image_suffix: vectronyx
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine whether to push images
+        id: push_policy
+        run: |
+          SHOULD_PUSH="false"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            SHOULD_PUSH="true"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.push_images }}" = "true" ]; then
+            SHOULD_PUSH="true"
+          fi
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "should_push=$SHOULD_PUSH" >> "$GITHUB_OUTPUT"
+          echo "image_name=${REGISTRY}/${OWNER_LOWER}/${{ matrix.image_suffix }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: steps.push_policy.outputs.should_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags & OCI labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.push_policy.outputs.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push (or verify on PR) container image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: ${{ steps.push_policy.outputs.should_push == 'true' }}
+          load: ${{ steps.push_policy.outputs.should_push != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL || 'https://din-esh-kumar-vectronyx-backend.hf.space' }}
+            VITE_SUPABASE_URL=${{ vars.VITE_SUPABASE_URL || '' }}
+            VITE_SUPABASE_PUBLISHABLE_KEY=${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || '' }}
+            VITE_GEMINI_MODEL=${{ vars.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+            VITE_GROQ_MODEL=${{ vars.VITE_GROQ_MODEL || 'openai/gpt-oss-120b' }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          provenance: ${{ steps.push_policy.outputs.should_push == 'true' }}
+          sbom: ${{ steps.push_policy.outputs.should_push == 'true' }}
+
+      - name: Generate GitHub Build Provenance Attestation
+        if: steps.push_policy.outputs.should_push == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.push_policy.outputs.image_name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Resolve image reference for vulnerability scanning
+        id: scan_target
+        env:
+          SHOULD_PUSH: ${{ steps.push_policy.outputs.should_push }}
+          IMAGE_NAME: ${{ steps.push_policy.outputs.image_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          if [ "$SHOULD_PUSH" = "true" ] && [ -n "$DIGEST" ]; then
+            REF="${IMAGE_NAME}@${DIGEST}"
+          else
+            REF=$(printf '%s\n' "$META_TAGS" | head -n 1)
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved Trivy scan target: $REF"
+
+      - name: Scan container image for HIGH/CRITICAL CVEs (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.scan_target.outputs.ref }}
+          format: sarif
+          output: trivy-${{ matrix.target }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Upload container vulnerability SARIF
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.target)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.target }}.sarif
+          category: trivy-container-${{ matrix.target }}
+
+      - name: Publish image summary
+        run: |
+          {
+            echo "### Docker Image: \`${{ matrix.target }}\`"
+            echo "- **Registry Image**: \`${{ steps.push_policy.outputs.image_name }}\`"
+            echo "- **Pushed to GHCR**: \`${{ steps.push_policy.outputs.should_push }}\`"
+            echo "- **Digest**: \`${{ steps.build.outputs.digest || 'local-pr-build' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

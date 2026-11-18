@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Deployment & CI/CD Documentation
+    url: https://github.com/din-esh-kumar/Vectronyx/blob/main/docs/DEPLOYMENT.md
+    about: Check the production deployment and GitHub Actions runbook before opening a deployment issue.

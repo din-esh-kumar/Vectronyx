@@ -1,0 +1,101 @@
+name: Semantic Release & Artifact Publishing
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing Git tag to build and publish a GitHub Release for (e.g. v1.2.0)"
+        type: string
+        required: true
+      prerelease:
+        description: "Mark release as a pre-release"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  release:
+    name: Build Artifacts & Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run release secret gate
+        run: python scripts/ci_secret_scan.py
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build verified frontend release bundle
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://din-esh-kumar-vectronyx-backend.hf.space' }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || '' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || '' }}
+          VITE_GEMINI_MODEL: ${{ vars.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+          VITE_GROQ_MODEL: ${{ vars.VITE_GROQ_MODEL || 'openai/gpt-oss-120b' }}
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run typecheck
+          pnpm --dir frontend run build
+          python3 scripts/ci_secret_scan.py --paths frontend/dist
+
+      - name: Package release archive & SHA256 checksums
+        id: pkg
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          TAG="${RAW_TAG#refs/tags/}"
+          mkdir -p release-artifacts
+          tar -czf "release-artifacts/vectronyx-frontend-${TAG}.tar.gz" -C frontend/dist .
+          cp backend/requirements.txt "release-artifacts/backend-requirements-${TAG}.txt"
+          (
+            cd release-artifacts
+            sha256sum * > "SHA256SUMS-${TAG}.txt"
+          )
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          IS_PRE="false"
+          if [[ "$TAG" == *"-"* ]] || [ "${{ inputs.prerelease }}" = "true" ]; then
+            IS_PRE="true"
+          fi
+          echo "prerelease=$IS_PRE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release with auto-generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.pkg.outputs.tag }}
+          IS_PRE: ${{ steps.pkg.outputs.prerelease }}
+        run: |
+          FLAGS=(--generate-notes --title "Vectronyx ${TAG}")
+          if [ "$IS_PRE" = "true" ]; then
+            FLAGS+=(--prerelease)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-artifacts/* --clobber
+          else
+            gh release create "$TAG" release-artifacts/* "${FLAGS[@]}"
+          fi

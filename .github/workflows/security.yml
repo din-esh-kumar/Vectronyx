@@ -1,0 +1,202 @@
+name: Security, SAST & Supply-Chain Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly Monday 04:00 UTC vulnerability & SAST sweep
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: vectronyx-security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  # ============================================================================
+  # 1. Secret Scanning (Custom Vectronyx Scanner + Gitleaks)
+  # ============================================================================
+  secrets-audit:
+    name: Secret & Credential Exposure Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Vectronyx tracked-file secret scanner
+        run: python scripts/ci_secret_scan.py
+
+      - name: Run Gitleaks history & diff secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+
+  # ============================================================================
+  # 2. CodeQL Static Application Security Testing (Python + TypeScript/JS)
+  # ============================================================================
+  codeql-sast:
+    name: CodeQL SAST (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # ============================================================================
+  # 3. Dependency Vulnerability Audits (Python pip-audit + Frontend pnpm audit)
+  # ============================================================================
+  dependency-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Audit Python dependencies (pip-audit)
+        run: |
+          pip install --no-cache-dir pip-audit
+          set +e
+          pip-audit -r backend/requirements.txt --format json --output pip-audit.json
+          AUDIT_EXIT=$?
+          set -e
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          raw = json.loads(Path("pip-audit.json").read_text(encoding="utf-8"))
+          deps = raw.get("dependencies", raw) if isinstance(raw, dict) else raw
+          vulns = []
+          for dep in deps:
+              for v in dep.get("vulns", []):
+                  vulns.append((dep.get("name"), dep.get("version"), v.get("id"), ", ".join(v.get("fix_versions", []))))
+
+          lines = ["### Python Dependency Audit (`pip-audit`)"]
+          if not vulns:
+              lines.append("- **Status**: Clean (0 known vulnerabilities)")
+          else:
+              lines.append(f"- **Findings**: {len(vulns)} advisory(s) found (advisory mode; review Dependabot PRs)")
+              lines.extend(["", "| Package | Version | Advisory | Fix Versions |", "|---|---|---|---|"])
+              for name, ver, vid, fix in vulns[:25]:
+                  lines.append(f"| `{name}` | `{ver}` | `{vid}` | `{fix or 'n/a'}` |")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n\n")
+          PY
+          if [ "$AUDIT_EXIT" -ne 0 ]; then
+            echo "::warning::pip-audit reported advisories in backend/requirements.txt. See job summary and pip-audit.json artifact."
+          fi
+
+      - name: Set up pnpm & Node.js
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Audit Frontend production dependencies (pnpm audit)
+        run: |
+          set +e
+          pnpm --dir frontend audit --prod --audit-level=high --json > pnpm-audit.json
+          PNPM_EXIT=$?
+          set -e
+          {
+            echo "### Frontend Production Dependency Audit (\`pnpm audit --prod\`)"
+            if [ "$PNPM_EXIT" -eq 0 ]; then
+              echo "- **Status**: Clean (0 high/critical production vulnerabilities)"
+            else
+              echo "- **Status**: High/critical advisories detected — inspect \`pnpm-audit.json\` artifact."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$PNPM_EXIT" -ne 0 ]; then
+            echo "::warning::pnpm audit reported high/critical vulnerabilities in frontend dependencies."
+          fi
+
+      - name: Upload vulnerability audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports-${{ github.sha }}
+          path: |
+            pip-audit.json
+            pnpm-audit.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # 4. Infrastructure-as-Code & Dockerfile Misconfiguration Scan (Trivy)
+  # ============================================================================
+  iac-scan:
+    name: Container & IaC Misconfiguration Scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy IaC / Dockerfile config scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-iac.sarif
+          exit-code: "0"
+
+      - name: Upload Trivy IaC SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-iac.sarif') != ''
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac

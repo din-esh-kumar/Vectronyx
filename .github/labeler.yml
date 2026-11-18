@@ -1,0 +1,53 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "backend/**"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "frontend/**"
+
+devops:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "scripts/**"
+          - "vercel.json"
+          - "frontend/vercel.json"
+          - "render.yaml"
+          - "railway.json"
+          - "netlify.toml"
+          - "Procfile"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Dockerfile"
+          - "**/Dockerfile"
+          - "docker-compose.yml"
+          - "**/.dockerignore"
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "backend/alembic/**"
+          - "backend/app/db/**"
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/ci_secret_scan.py"
+          - ".github/workflows/security.yml"
+          - "backend/app/middleware/auth.py"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "backend/tests/**"
