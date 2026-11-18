@@ -27,7 +27,7 @@ alembic>=1.13.2                   # DB migrations
 # AI / LLM
 # ----------------------------
 groq>=1.0.0                       # Groq Cloud API Client
-google-genai>=2.30.0              # Google GenAI SDK (Gemini)
+google-genai>=3.3.0              # Google GenAI SDK (Gemini)
 instructor>=1.17.0                # Guaranteed Structured Outputs with Pydantic validation
 jsonref>=1.1.0                    # Schema dereferencing for Gemini structured outputs
 
