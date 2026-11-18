@@ -5,7 +5,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1: Build Frontend (React + Vite)
 # ------------------------------------------------------------------------------
-FROM node:20-slim AS frontend-builder
+FROM node:26-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
