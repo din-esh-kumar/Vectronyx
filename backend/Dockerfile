@@ -1,7 +1,7 @@
 # ==============================================================================
 # Vectronyx AI Workbench - Production Backend Dockerfile (HF Spaces & Docker)
 # ==============================================================================
-FROM python:3.10-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 
@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ------------------------------------------------------------------------------
 # Production Runtime Stage (HF Spaces UID 1000 Compatible)
 # ------------------------------------------------------------------------------
-FROM python:3.10-slim AS runner
+FROM python:3.15-slim AS runner
 
 # Hugging Face Spaces runs containers with UID 1000
 RUN useradd -m -u 1000 user
