@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@apollo/client':
         specifier: ^4.3.8
-        version: 4.3.8(graphql@16.15.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(rxjs@7.8.2)
+        version: 4.3.8(graphql@17.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(rxjs@7.8.2)
       '@supabase/supabase-js':
         specifier: ^2.119.1
         version: 2.119.1
@@ -21,8 +21,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       graphql:
-        specifier: ^16.15.0
-        version: 16.15.0
+        specifier: ^17.1.0
+        version: 17.1.0
       lucide-react:
         specifier: ^1.75.0
         version: 1.75.0(@types/react@18.3.31)(react@18.3.1)
@@ -858,9 +858,9 @@ packages:
     peerDependencies:
       graphql: ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  graphql@16.15.0:
-    resolution: {integrity: sha512-32kz9FecohDiC/tgcViwnRXM7HFBVTPiW7pHO+DikKOI5KjhU/jNULOReXsrFqt2WAYbE9xFXsTffJw6iTO8qw==}
-    engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
+  graphql@17.1.0:
+    resolution: {integrity: sha512-JKCOa7rSQNrket/JFhuua86hljUO+IIpyUHfKxlKD6FEfbrLX8jc1FDrA0KPKI+s8OspBCF/5npYccAICHXPpQ==}
+    engines: {node: ^22.0.0 || ^24.0.0 || >=26.0.0}
 
   iceberg-js@0.8.1:
     resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
@@ -1232,14 +1232,14 @@ packages:
 
 snapshots:
 
-  '@apollo/client@4.3.8(graphql@16.15.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(rxjs@7.8.2)':
+  '@apollo/client@4.3.8(graphql@17.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(rxjs@7.8.2)':
     dependencies:
-      '@graphql-typed-document-node/core': 3.2.0(graphql@16.15.0)
+      '@graphql-typed-document-node/core': 3.2.0(graphql@17.1.0)
       '@wry/caches': 1.0.1
       '@wry/equality': 0.5.7
       '@wry/trie': 0.5.0
-      graphql: 16.15.0
-      graphql-tag: 2.12.7(graphql@16.15.0)
+      graphql: 17.1.0
+      graphql-tag: 2.12.7(graphql@17.1.0)
       optimism: 0.18.1
       rxjs: 7.8.2
       tslib: 2.9.1
@@ -1437,9 +1437,9 @@ snapshots:
   '@esbuild/win32-x64@0.25.12':
     optional: true
 
-  '@graphql-typed-document-node/core@3.2.0(graphql@16.15.0)':
+  '@graphql-typed-document-node/core@3.2.0(graphql@17.1.0)':
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -1879,12 +1879,12 @@ snapshots:
 
   graceful-fs@4.2.12: {}
 
-  graphql-tag@2.12.7(graphql@16.15.0):
+  graphql-tag@2.12.7(graphql@17.1.0):
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
       tslib: 2.9.1
 
-  graphql@16.15.0: {}
+  graphql@17.1.0: {}
 
   iceberg-js@0.8.1: {}
 
