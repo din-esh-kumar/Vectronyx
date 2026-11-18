@@ -7,7 +7,7 @@
 # ----------------------------
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
-python-multipart>=0.0.9          # file uploads (CSV)
+python-multipart>=0.0.33          # file uploads (CSV)
 httpx>=0.28.1                    # async HTTP client
 
 # ----------------------------
