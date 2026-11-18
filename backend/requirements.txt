@@ -6,7 +6,7 @@
 # Web Framework & API
 # ----------------------------
 fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+uvicorn[standard]>=0.54.0
 python-multipart>=0.0.9          # file uploads (CSV)
 httpx>=0.28.1                    # async HTTP client
 
