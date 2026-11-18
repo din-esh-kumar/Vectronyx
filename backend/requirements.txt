@@ -18,7 +18,7 @@ python-dotenv>=1.0.1              # .env loading
 # ----------------------------
 # Database (Supabase / PostgreSQL)
 # ----------------------------
-supabase>=2.10.0                  # Supabase client
+supabase>=2.34.1                  # Supabase client
 psycopg2-binary>=2.9.9            # PostgreSQL driver
 sqlalchemy>=2.0.35                # ORM
 alembic>=1.13.2                   # DB migrations
