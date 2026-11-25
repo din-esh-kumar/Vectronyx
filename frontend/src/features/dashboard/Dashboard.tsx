@@ -1,32 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { API_URL } from "../../lib/apiConfig";
 import {
   BarChart3,
   Upload,
   Database,
   ArrowUpRight,
-  RefreshCw,
-  Server,
 } from "lucide-react";
-
-interface HealthState {
-  status: "checking" | "online" | "offline";
-  latencyMs: number | null;
-  service: string | null;
-  version: string | null;
-}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [userName, setUserName] = useState<string | null>(null);
-  const [health, setHealth] = useState<HealthState>({
-    status: "checking",
-    latencyMs: null,
-    service: null,
-    version: null,
-  });
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -45,41 +29,6 @@ export default function Dashboard() {
     };
     fetchUser();
   }, []);
-
-  const checkHealth = useCallback(async () => {
-    setHealth((prev) => ({ ...prev, status: "checking" }));
-    const started = performance.now();
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 8000);
-
-    try {
-      const res = await fetch(`${API_URL}/health`, { signal: controller.signal });
-      const elapsed = Math.round(performance.now() - started);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setHealth({
-        status: data?.status === "healthy" ? "online" : "offline",
-        latencyMs: elapsed,
-        service: data?.service || "Vectronyx API",
-        version: data?.version || null,
-      });
-    } catch {
-      setHealth({
-        status: "offline",
-        latencyMs: null,
-        service: null,
-        version: null,
-      });
-    } finally {
-      window.clearTimeout(timer);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkHealth();
-  }, [checkHealth]);
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -110,62 +59,6 @@ export default function Dashboard() {
               <span>Open Data Analyst</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
-          </div>
-        </div>
-
-        {/* Live Backend Health Check */}
-        <div className="lg:w-72 shrink-0 p-4 rounded-2xl glass-card-bronze border border-amber-500/25 space-y-2.5">
-          <div className="flex items-center justify-between border-b border-amber-500/15 pb-2">
-            <span className="text-xs font-bold text-amber-200 flex items-center gap-1.5 font-mono">
-              <Server className="w-3.5 h-3.5 text-amber-400" />
-              <span>Backend Status</span>
-            </span>
-
-            <button
-              type="button"
-              onClick={checkHealth}
-              disabled={health.status === "checking"}
-              className="text-[11px] font-mono text-amber-300 hover:text-white inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title="Re-check /health endpoint"
-            >
-              <RefreshCw
-                className={`w-3 h-3 ${health.status === "checking" ? "animate-spin" : ""}`}
-              />
-              <span>Refresh</span>
-            </button>
-          </div>
-
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between items-center">
-              <span className="text-violet-300/70 font-mono">State:</span>
-              {health.status === "online" ? (
-                <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-emerald-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  Online
-                </span>
-              ) : health.status === "checking" ? (
-                <span className="font-mono text-amber-300">Checking...</span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-rose-400">
-                  <span className="w-2 h-2 rounded-full bg-rose-400" />
-                  Offline
-                </span>
-              )}
-            </div>
-
-            {health.latencyMs !== null && (
-              <div className="flex justify-between items-center">
-                <span className="text-violet-300/70 font-mono">Response Time:</span>
-                <span className="font-mono font-semibold text-white">{health.latencyMs} ms</span>
-              </div>
-            )}
-
-            <div className="flex justify-between items-center gap-2">
-              <span className="text-violet-300/70 font-mono shrink-0">Endpoint:</span>
-              <span className="font-mono text-[11px] text-amber-200/85 truncate" title={API_URL || "Same Origin"}>
-                {API_URL || "Same Origin"}
-              </span>
-            </div>
           </div>
         </div>
       </div>

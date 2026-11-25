@@ -41,6 +41,7 @@ import {
   SegmentBenchmarksSection,
 } from "./QuantitativeSections";
 import { ReportCharts } from "./ReportCharts";
+import { BIReportViewer } from "./BIReportViewer";
 import {
   SAMPLE_FINTECH_CSV,
   SAMPLE_SAAS_CSV,
@@ -867,7 +868,7 @@ export default function DataAnalyst() {
               }`}
             >
               <Code2 className="w-4 h-4" />
-              <span>3. BI Architecture & DAX</span>
+              <span>3. BI Viewer & Exports</span>
             </button>
           </div>
 
@@ -1297,6 +1298,8 @@ export default function DataAnalyst() {
              ================================================================= */}
           {activeTab === "bi" && (
             <div className="space-y-6">
+              <BIReportViewer dashboard={dashboard} />
+
               <div className="p-6 rounded-3xl glass-card border border-violet-500/20 space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
@@ -1482,6 +1485,10 @@ export default function DataAnalyst() {
             </div>
           )}
         </div>
+      )}
+
+      {!dashboard && !loading && (
+        <BIReportViewer dashboard={null} />
       )}
     </div>
   );
