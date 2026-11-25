@@ -481,6 +481,7 @@ async def critique_plan_with_llm(
     deterministic_defects: List[str],
     iteration: int,
     max_iterations: int,
+    provider: Optional[str] = "groq",
 ) -> Optional[ReportCritique]:
     try:
         user_msg = build_peer_review_user_prompt(
@@ -499,6 +500,7 @@ async def critique_plan_with_llm(
             response_model=ReportCritique,
             system_prompt=PEER_REVIEW_SYSTEM_PROMPT,
             user_prompt=user_msg,
+            provider=provider,
             max_retries=2,
             temperature=0.15,
             max_tokens=PEER_REVIEW_MAX_TOKENS,
@@ -519,6 +521,7 @@ async def rewrite_plan_with_llm(
     critique_summary: str,
     iteration: int,
     max_iterations: int,
+    provider: Optional[str] = "gemini",
 ) -> Optional[DashboardPlan]:
     try:
         user_msg = build_refinement_user_prompt(
@@ -536,6 +539,7 @@ async def rewrite_plan_with_llm(
             response_model=LLMDashboardDraft,
             system_prompt=REFINEMENT_SYSTEM_PROMPT,
             user_prompt=user_msg,
+            provider=provider,
             max_retries=2,
             temperature=0.2,
             max_tokens=DEEP_PLANNER_MAX_TOKENS,
