@@ -4,6 +4,7 @@ Centralized Instructor Structured Outputs Client for Vectronyx AI Workbench.
 Wraps Groq Cloud and Google Gemini (GenAI) client calls with automatic Pydantic validation,
 guaranteeing zero JSON/XML parsing errors, self-correcting feedback loops, and type-safe tool invocations.
 """
+import asyncio
 import logging
 from typing import Type, TypeVar, Optional, Any, List, Dict, cast
 from pydantic import BaseModel
@@ -225,13 +226,16 @@ async def generate_structured(
     # 1. Attempt Primary Provider
     try:
         logger.info(f"Generating structured output with Instructor via {primary_name} ({response_model.__name__})")
-        return await primary_fn(
-            response_model=response_model,
-            messages=conversation_messages,
-            model=model,
-            max_retries=max_retries,
-            temperature=temperature,
-            max_tokens=max_tokens,
+        return await asyncio.wait_for(
+            primary_fn(
+                response_model=response_model,
+                messages=conversation_messages,
+                model=model,
+                max_retries=max_retries,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ),
+            timeout=60.0,
         )
     except Exception as e:
         err_msg = f"Primary provider {primary_name} failed: {e}"
@@ -241,13 +245,16 @@ async def generate_structured(
     # 2. Attempt Secondary Fallback Provider
     try:
         logger.info(f"Failing over structured output generation to {secondary_name} ({response_model.__name__})")
-        return await secondary_fn(
-            response_model=response_model,
-            messages=conversation_messages,
-            model=None,  # Reset model so secondary provider uses its native configuration
-            max_retries=max_retries,
-            temperature=temperature,
-            max_tokens=max_tokens,
+        return await asyncio.wait_for(
+            secondary_fn(
+                response_model=response_model,
+                messages=conversation_messages,
+                model=None,  # Reset model so secondary provider uses its native configuration
+                max_retries=max_retries,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ),
+            timeout=60.0,
         )
     except Exception as e:
         err_msg = f"Secondary provider {secondary_name} failed: {e}"

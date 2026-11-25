@@ -5,13 +5,14 @@ from typing import List
 
 try:
     from dotenv import load_dotenv, find_dotenv
-    # Resolve root directory: config.py is in backend/app/core/ (4 levels up)
-    root_env = Path(__file__).resolve().parents[3] / ".env"
-    if root_env.is_file():
-        load_dotenv(dotenv_path=root_env, override=True)
-    else:
-        # Fallback to search up directory tree
-        load_dotenv(find_dotenv(usecwd=True), override=True)
+    if os.getenv("ENVIRONMENT", "").strip().lower() != "test":
+        # Resolve root directory: config.py is in backend/app/core/ (4 levels up)
+        root_env = Path(__file__).resolve().parents[3] / ".env"
+        if root_env.is_file():
+            load_dotenv(dotenv_path=root_env, override=False)
+        else:
+            # Fallback to search up directory tree
+            load_dotenv(find_dotenv(usecwd=True), override=False)
 except ImportError:
     pass
 
