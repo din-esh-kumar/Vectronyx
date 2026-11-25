@@ -1113,6 +1113,155 @@ export default function DataAnalyst() {
 
                     <SegmentBenchmarksSection benchmarks={dossier.segment_benchmarks} />
 
+                    {/* Data Cleansing, Redundancy Removal & Dynamic Data Science (Gemini + Groq) */}
+                    {(dashboard.cleansing_report || dashboard.data_science_summary) && (
+                      <div className="p-6 rounded-2xl glass-card border border-emerald-500/25 space-y-5 print-break-avoid">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-emerald-400" />
+                            <h3 className="text-base font-bold text-white font-display">
+                              Automated Data Cleansing, Redundancy Removal & ML Pipeline
+                            </h3>
+                          </div>
+                          {dashboard.models_used && dashboard.models_used.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {dashboard.models_used.map((m) => (
+                                <span
+                                  key={m}
+                                  className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-violet-900/50 text-amber-200 border border-amber-500/30"
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {dashboard.cleansing_report && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Rows Cleansed</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.raw_rows.toLocaleString()} →{" "}
+                                {dashboard.cleansing_report.cleaned_rows.toLocaleString()}
+                              </div>
+                              <div className="text-[11px] text-emerald-300 font-mono">
+                                {dashboard.cleansing_report.duplicates_removed} duplicate(s) removed
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Redundant Cols</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.raw_columns} →{" "}
+                                {dashboard.cleansing_report.cleaned_columns}
+                              </div>
+                              <div className="text-[11px] text-amber-300 font-mono truncate">
+                                {dashboard.cleansing_report.collinear_features_pruned.length} collinear ML pruned
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Hygiene & Imputations</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.missing_values_imputed.toLocaleString()}
+                              </div>
+                              <div className="text-[11px] text-violet-300/80 font-mono">
+                                {dashboard.cleansing_report.whitespace_and_case_normalized} text normalizations
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Integrity Uplift</div>
+                              <div className="text-lg font-bold text-emerald-400 font-mono mt-1">
+                                {dashboard.cleansing_report.integrity_before}% →{" "}
+                                {dashboard.cleansing_report.integrity_after}%
+                              </div>
+                              <div className="text-[11px] text-violet-300/80 font-mono">
+                                {dashboard.cleansing_report.type_coercions.length} type coercion(s)
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {dashboard.data_science_summary && (
+                          <div className="space-y-3">
+                            {dashboard.data_science_summary.ai_data_science_verdict && (
+                              <div className="p-3.5 rounded-xl bg-violet-950/50 border border-violet-500/25 text-xs text-violet-100 leading-relaxed">
+                                <span className="font-mono font-bold text-amber-300 uppercase mr-1.5">
+                                  Dual-AI Data Science Verdict:
+                                </span>
+                                {dashboard.data_science_summary.ai_data_science_verdict}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                              {dashboard.data_science_summary.top_feature_importances.length > 0 && (
+                                <div className="p-4 rounded-xl bg-black/35 border border-violet-500/20 space-y-2.5">
+                                  <div className="flex items-center justify-between font-mono">
+                                    <span className="font-bold text-amber-300 uppercase text-[11px]">
+                                      Predictive Drivers ({dashboard.data_science_summary.target_metric})
+                                    </span>
+                                    {dashboard.data_science_summary.r2_score !== null &&
+                                      dashboard.data_science_summary.r2_score !== undefined && (
+                                        <span className="text-emerald-300 text-[11px]">
+                                          R² = {dashboard.data_science_summary.r2_score}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <div className="space-y-2">
+                                    {dashboard.data_science_summary.top_feature_importances.slice(0, 5).map((fi) => (
+                                      <div key={fi.feature} className="space-y-1">
+                                        <div className="flex justify-between font-mono text-[11px]">
+                                          <span className="text-white truncate">{fi.feature}</span>
+                                          <span className="text-amber-300">{fi.importance_pct}%</span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full bg-violet-950 overflow-hidden">
+                                          <div
+                                            className="h-full bg-gradient-to-r from-violet-500 to-amber-400"
+                                            style={{ width: `${Math.min(100, fi.importance_pct)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {dashboard.data_science_summary.clusters.length > 0 && (
+                                <div className="p-4 rounded-xl bg-black/35 border border-violet-500/20 space-y-2.5">
+                                  <div className="flex items-center justify-between font-mono">
+                                    <span className="font-bold text-amber-300 uppercase text-[11px]">
+                                      Silhouette K-Means Cohorts (k={dashboard.data_science_summary.optimal_clusters})
+                                    </span>
+                                    {dashboard.data_science_summary.silhouette_score !== null &&
+                                      dashboard.data_science_summary.silhouette_score !== undefined && (
+                                        <span className="text-emerald-300 text-[11px]">
+                                          Silhouette = {dashboard.data_science_summary.silhouette_score}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {dashboard.data_science_summary.clusters.map((cl) => (
+                                      <div
+                                        key={cl.cluster_id}
+                                        className="p-2 rounded-lg bg-violet-950/40 border border-violet-500/15 flex items-center justify-between gap-2"
+                                      >
+                                        <span className="font-semibold text-white truncate">{cl.label}</span>
+                                        <span className="font-mono text-[11px] text-amber-200 shrink-0">
+                                          {cl.size} rows ({cl.share_pct}%)
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {dossier.concentration_risk && (
                       <div className="p-6 rounded-2xl glass-card border border-violet-500/20 space-y-4 print-break-avoid">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">

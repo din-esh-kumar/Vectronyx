@@ -204,6 +204,62 @@ export interface PowerBiPageBlueprint {
   visuals?: string[];
 }
 
+export interface CleansingAction {
+  stage: string;
+  target: string;
+  action: string;
+  count: number;
+  detail: string;
+}
+
+export interface DataCleansingReport {
+  raw_rows: number;
+  cleaned_rows: number;
+  rows_removed: number;
+  duplicates_removed: number;
+  raw_columns: number;
+  cleaned_columns: number;
+  columns_dropped: number;
+  dropped_column_names: string[];
+  redundant_columns_removed: string[];
+  collinear_features_pruned: string[];
+  type_coercions: string[];
+  missing_values_imputed: number;
+  whitespace_and_case_normalized: number;
+  outliers_winsorized: number;
+  integrity_before: number;
+  integrity_after: number;
+  actions: CleansingAction[];
+}
+
+export interface ClusterProfile {
+  cluster_id: number;
+  label: string;
+  size: number;
+  share_pct: number;
+  centroid_summary: Record<string, number>;
+}
+
+export interface FeatureImportanceItem {
+  feature: string;
+  importance_pct: number;
+  direction: string;
+}
+
+export interface DataScienceSummary {
+  target_metric?: string | null;
+  model_type: string;
+  r2_score?: number | null;
+  rmse?: number | null;
+  optimal_clusters: number;
+  silhouette_score?: number | null;
+  pca_variance_explained_pct: number[];
+  top_feature_importances: FeatureImportanceItem[];
+  clusters: ClusterProfile[];
+  ai_data_science_verdict: string;
+  models_participated: string[];
+}
+
 export interface DashboardPlan {
   title: string;
   summary: string;
@@ -222,4 +278,7 @@ export interface DashboardPlan {
   refinement_iterations_run?: number;
   refinement_history?: RefinementIterationRecord[];
   powerbi_pages?: PowerBiPageBlueprint[];
+  cleansing_report?: DataCleansingReport | null;
+  data_science_summary?: DataScienceSummary | null;
+  models_used?: string[];
 }
