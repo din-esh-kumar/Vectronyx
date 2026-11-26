@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache")
+os.environ.setdefault("VECTRONYX_HF_SPACE", "1")
 os.makedirs("/tmp/fastembed_cache", exist_ok=True)
 
 # Ensure Space root directory is in sys.path so `app.*` imports resolve cleanly

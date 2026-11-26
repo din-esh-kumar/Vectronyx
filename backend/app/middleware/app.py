@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,7 @@ if backend_root not in sys.path:
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.core.config import settings
 from app.middleware.auth import router as auth_router
 from app.modules.data_analyst.routes import router as analyst_router
@@ -37,11 +38,33 @@ app.add_middleware(
 )
 
 
+def _is_hf_space_runtime() -> bool:
+    return bool(
+        (
+            os.getenv("VECTRONYX_HF_SPACE")
+            or os.getenv("SPACE_ID")
+            or os.getenv("SPACE_HOST")
+            or ""
+        ).strip()
+    )
+
+
+def _is_non_frameable_api_path(path: str) -> bool:
+    return path == "/health" or path.startswith(("/api/", "/auth/")) or path in ("/api", "/auth")
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    if _is_hf_space_runtime() and not _is_non_frameable_api_path(request.url.path):
+        # Allow Hugging Face Space App iframe embedding while keeping API/auth routes strictly un-frameable
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "frame-ancestors 'self' https://huggingface.co https://*.hf.space",
+        )
+    else:
+        response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
@@ -102,5 +125,7 @@ if _dist_candidate.is_dir() and (_dist_candidate / "index.html").is_file():
         return HTMLResponse(content=_render_index_html())
 else:
     @app.get("/")
-    def root():
+    def root(request: Request):
+        if _is_hf_space_runtime() and "text/html" in (request.headers.get("accept") or "").lower():
+            return RedirectResponse(url="/ui", status_code=302)
         return {"message": "Vectronyx AI Workbench Backend Running ⚡"}

@@ -240,6 +240,31 @@ def test_security_headers_and_strict_cors_allowlist():
     assert evil.headers.get("access-control-allow-origin") != "https://evil-attacker.example"
 
 
+def test_hf_space_iframe_headers_allow_huggingface_while_api_stays_deny(monkeypatch):
+    monkeypatch.setenv("SPACE_ID", "din-esh-kumar/vectronyx-backend")
+    client = TestClient(app)
+
+    health_resp = client.get("/health")
+    assert health_resp.status_code == 200
+    assert health_resp.headers.get("x-frame-options") == "DENY"
+
+    api_resp = client.get("/api/memory/status")
+    assert api_resp.status_code == 200
+    assert api_resp.headers.get("x-frame-options") == "DENY"
+
+    root_json = client.get("/", headers={"Accept": "application/json"})
+    assert root_json.status_code == 200
+    assert "x-frame-options" not in root_json.headers
+    assert "https://huggingface.co" in (root_json.headers.get("content-security-policy") or "")
+
+    root_browser = client.get("/", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert root_browser.status_code in (200, 302)
+    if root_browser.status_code == 302:
+        assert root_browser.headers.get("location") == "/ui"
+    assert "x-frame-options" not in root_browser.headers
+    assert "https://huggingface.co" in (root_browser.headers.get("content-security-policy") or "")
+
+
 def test_auth_password_scrypt_hashing_and_constant_time_verify():
     from app.middleware.auth import hash_password, verify_password
 
