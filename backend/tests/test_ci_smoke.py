@@ -108,6 +108,24 @@ def test_deploy_hf_space_helper_subdomain():
     assert "NVIDIA_MODEL" in mod.VARIABLE_KEYS
     assert "NVIDIA_API_KEY" in mod.CI_SYNC_SECRET_KEYS
 
+    class _FakeHfApi:
+        def __init__(self):
+            self.deleted_vars: list[str] = []
+            self.added_secrets: list[tuple[str, str]] = []
+
+        def delete_space_variable(self, repo_id: str, key: str):
+            self.deleted_vars.append(key)
+
+        def add_space_secret(self, repo_id: str, key: str, value: str):
+            self.added_secrets.append((key, value))
+
+    fake_api = _FakeHfApi()
+    existing = {"NVIDIA_API_KEY"}
+    mod._set_space_secret_clean(fake_api, "owner/space", "NVIDIA_API_KEY", "dummy-val", existing)
+    assert fake_api.deleted_vars == ["NVIDIA_API_KEY"]
+    assert "NVIDIA_API_KEY" not in existing
+    assert fake_api.added_secrets == [("NVIDIA_API_KEY", "dummy-val")]
+
 
 def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():
     mod = _load_script("ci_secret_scan", "scripts/ci_secret_scan.py")

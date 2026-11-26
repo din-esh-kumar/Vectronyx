@@ -121,7 +121,7 @@ jobs:
     name: Continuous Delivery
     needs: [backend, frontend]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     permissions:
       contents: read
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -130,8 +130,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check deployment configuration
+      - name: Deploy backend to Hugging Face Space
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID_VAR: ${{ vars.HF_SPACE_ID }}
+          HF_SPACE_ID_SEC: ${{ secrets.HF_SPACE_ID }}
+          HF_SPACE_SDK_VAR: ${{ vars.HF_SPACE_SDK }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -146,10 +150,12 @@ jobs:
           echo "Commit: ${{ github.sha }}"
           echo "Branch: ${{ github.ref }}"
           echo "=========================================="
-          if [ -n "${{ secrets.HF_TOKEN }}" ] && [ -n "${{ secrets.HF_SPACE_ID }}" ]; then
-            echo "Deploying backend to HuggingFace Space: ${{ secrets.HF_SPACE_ID }}..."
+          if [ -n "$HF_TOKEN" ]; then
+            SPACE_ID="${HF_SPACE_ID_VAR:-${HF_SPACE_ID_SEC:-din-esh-kumar/vectronyx-backend}}"
+            SPACE_SDK="${HF_SPACE_SDK_VAR:-gradio}"
+            echo "Deploying backend to HuggingFace Space: $SPACE_ID (sdk=$SPACE_SDK)..."
             pip install huggingface_hub python-dotenv
-            python scripts/deploy_hf_space.py --space-id "${{ secrets.HF_SPACE_ID }}" --sync-ci-env || echo "HF deployment finished with notice"
+            python scripts/deploy_hf_space.py --space-id "$SPACE_ID" --sdk "$SPACE_SDK" --sync-ci-env --wait --wait-timeout 240
           else
-            echo "No HF_TOKEN/HF_SPACE_ID configured; skipping remote push to Space."
+            echo "No HF_TOKEN secret configured in GitHub Actions; skipping remote push to Space."
           fi
