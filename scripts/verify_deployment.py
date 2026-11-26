@@ -49,7 +49,7 @@ DEFAULT_FRONTEND_ROUTES: Tuple[str, ...] = (
 )
 
 LIVE_BUNDLE_SECRET_RE = re.compile(
-    r"\bgsk_[A-Za-z0-9]{20,}\b|\bAQ\.Ab8[A-Za-z0-9_-]{20,}\b|\bAIza[0-9A-Za-z_-]{35}\b|\bsb_secret_[0-9A-Za-z_-]{15,}\b"
+    r"\bgsk_[A-Za-z0-9]{20,}\b|\bAQ\.Ab8[A-Za-z0-9_-]{20,}\b|\bAIza[0-9A-Za-z_-]{35}\b|\bnvapi-[A-Za-z0-9_-]{20,}\b|\bsb_secret_[0-9A-Za-z_-]{15,}\b"
 )
 
 

@@ -103,6 +103,10 @@ def test_deploy_hf_space_helper_subdomain():
     assert mod.space_subdomain("din-esh-kumar/vectronyx-backend") == (
         "https://din-esh-kumar-vectronyx-backend.hf.space"
     )
+    assert "NVIDIA_API_KEY" in mod.SECRET_KEYS
+    assert "NVIDIA_BASE_URL" in mod.VARIABLE_KEYS
+    assert "NVIDIA_MODEL" in mod.VARIABLE_KEYS
+    assert "NVIDIA_API_KEY" in mod.CI_SYNC_SECRET_KEYS
 
 
 def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():

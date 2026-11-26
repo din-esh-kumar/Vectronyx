@@ -41,6 +41,9 @@ Ensure your cloud accounts and environment variables are ready:
 | `SECRET_KEY` | Secure random string (e.g., `openssl rand -hex 32`) |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GROQ_API_KEY` | Groq Cloud API key |
+| `NVIDIA_API_KEY` | NVIDIA NIM API key (`nvapi-...`) for multi-provider inference |
+| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` |
 | `ALLOWED_ORIGINS` | Your frontend production URL (or `*`) |
 | `VITE_API_URL` | Production backend URL (e.g. `https://vectronyx-api.onrender.com`) |
 | `VITE_SUPABASE_URL` | Same as `SUPABASE_URL` |
@@ -96,17 +99,20 @@ Repository automation configs also include [`.github/dependabot.yml`](../.github
   - `DATABASE_URL` — enables automated `alembic upgrade head` migrations before backend deploy (when `AUTO_RUN_MIGRATIONS=true` or manual `run_migrations` input is checked).
   - `RENDER_DEPLOY_HOOK_URL` — optionally triggers a secondary Render backend deploy on `main`.
   - `DEPLOY_WEBHOOK_URL` — Slack or Discord incoming webhook URL for deployment and outage alerts.
+  - `NVIDIA_API_KEY` *(optional)* — NVIDIA NIM API key (`nvapi-...`), automatically synced to the HF Space during CI deploy.
+  - `GEMINI_API_KEY`, `GROQ_API_KEY` *(optional)* — LLM keys automatically synced to the HF Space during CI deploy when configured in GitHub Secrets.
 - **Optional Variables**:
   - `HF_SPACE_ID` *(defaults to `din-esh-kumar/vectronyx-backend`)*
   - `HF_SPACE_SDK` *(defaults to `gradio`; set `docker` for HF Pro Docker Spaces)*
   - `FRONTEND_URL` *(defaults to `https://vectronyx.vercel.app`)*
   - `AUTO_RUN_MIGRATIONS` *(set `true` to run Alembic migrations automatically on `main` pushes)*
+  - `LLM_PROVIDER`, `NVIDIA_BASE_URL`, `NVIDIA_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL` *(synced to HF Space during CI deploy)*
   - `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GEMINI_MODEL`, `VITE_GROQ_MODEL`
 
 > [!TIP]
 > Enable GitHub Branch Protection on `main` requiring **`Security & Secret Scan`**, **`Frontend CI (Typecheck, Build & Bundle Audit)`**, and **`Backend CI (Lint, Compile, Migrations & Tests)`**, and configure a **`production`** GitHub Environment under **Settings → Environments** if you want manual approval gates or deployment history tracking.
 
-In Hugging Face Space **Settings → Variables and secrets**, ensure your runtime secrets (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `SECRET_KEY`) are configured.
+In Hugging Face Space **Settings → Variables and secrets**, ensure your runtime secrets (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `NVIDIA_API_KEY`, `SECRET_KEY`) and variables (`LLM_PROVIDER`, `NVIDIA_BASE_URL`, `NVIDIA_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL`) are configured.
 
 ### Step 2: Deploy Frontend to Vercel
 1. Sign in to [Vercel](https://vercel.com) and click **Add New** → **Project**.

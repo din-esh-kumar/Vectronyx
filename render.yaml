@@ -41,6 +41,12 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: NVIDIA_MODEL
+        value: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
       - key: EMBEDDING_PROVIDER
         value: auto
       - key: VECTOR_STORE_PROVIDER
