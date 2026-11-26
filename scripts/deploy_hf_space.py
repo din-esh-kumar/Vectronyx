@@ -67,6 +67,21 @@ CI_SYNC_VARIABLE_KEYS = (
 )
 
 
+def _set_space_secret_clean(
+    api: HfApi,
+    space_id: str,
+    key: str,
+    value: str,
+    existing_var_names: set[str],
+) -> None:
+    """Set a Space secret and remove any colliding Space variable with the same name."""
+    if key in existing_var_names:
+        api.delete_space_variable(repo_id=space_id, key=key)
+        existing_var_names.discard(key)
+        print(f"  Removed colliding variable before setting secret: {key}")
+    api.add_space_secret(repo_id=space_id, key=key, value=value)
+
+
 def space_subdomain(space_id: str) -> str:
     """Convert Hugging Face 'owner/space_name' into '*.hf.space' subdomain."""
     owner, name = space_id.split("/", 1)
@@ -219,6 +234,13 @@ def main() -> int:
         exist_ok=True,
     )
 
+    existing_var_names: set[str] = set()
+    if args.sync_env or args.sync_ci_env:
+        try:
+            existing_var_names = set(api.get_space_variables(space_id).keys())
+        except Exception:
+            existing_var_names = set()
+
     if args.sync_env:
         env_path = Path(args.env_file).expanduser().resolve() if args.env_file else (repo_root / ".env")
         if dotenv_values is None:
@@ -238,7 +260,7 @@ def main() -> int:
                             "  [Notice] DATABASE_URL uses direct db.*.supabase.co host. "
                             "HF Spaces uses IPv4 outbound networking; if DB queries fail, switch to Supabase's IPv4 Session Pooler URL."
                         )
-                    api.add_space_secret(repo_id=space_id, key=key, value=val)
+                    _set_space_secret_clean(api, space_id, key, val, existing_var_names)
                     print(f"  Synced secret: {key}")
 
             for key in VARIABLE_KEYS:
@@ -260,7 +282,7 @@ def main() -> int:
             if not val and key == "NVIDIA_API_KEY":
                 val = (os.getenv("NVIDIA_NIM_API_KEY") or "").strip()
             if val:
-                api.add_space_secret(repo_id=space_id, key=key, value=val)
+                _set_space_secret_clean(api, space_id, key, val, existing_var_names)
                 print(f"  Synced CI secret: {key}")
         for key in CI_SYNC_VARIABLE_KEYS:
             val = (os.getenv(key) or "").strip()
