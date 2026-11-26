@@ -129,6 +129,7 @@ def build_dashboard_user_prompt(
     ground_truth_summary: str = "",
     target_focus: str = "",
     deep_stats_summary: str = "",
+    problem_definition_summary: str = "",
 ) -> str:
     prompt_body = f"""DATASET NAME: {dataset_name}
 TOTAL OBSERVATIONS: {row_count}
@@ -140,6 +141,11 @@ DATASET SCHEMA, SEMANTIC ROLES & ECONOMETRIC DIAGNOSTICS:
         prompt_body += f"""
 RESOLVED TARGET DIMENSIONS & ANALYTICAL INTENT:
 {target_focus}
+"""
+    if problem_definition_summary:
+        prompt_body += f"""
+ALIGNED PROBLEM DEFINITION & STAKEHOLDER MANDATE (STATIC CODE + AI):
+{problem_definition_summary}
 """
     if ground_truth_summary:
         prompt_body += f"""

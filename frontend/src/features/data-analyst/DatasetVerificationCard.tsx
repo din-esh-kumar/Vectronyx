@@ -162,7 +162,7 @@ export const DatasetVerificationCard: React.FC<DatasetVerificationCardProps> = (
                 Problem Definition & Stakeholder Metric Alignment
               </h2>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-violet-950/50 border border-violet-500/30 text-violet-200">
-                {problem.ai_provider_used}
+                {problem.synthesis_mode === "static_and_ai" ? "Static Code + AI" : "Static Code"} · {problem.ai_provider_used}
               </span>
             </div>
 
@@ -175,6 +175,19 @@ export const DatasetVerificationCard: React.FC<DatasetVerificationCardProps> = (
               <span>Use Problem as Analysis Prompt</span>
             </button>
           </div>
+
+          {problem.static_signals && problem.static_signals.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-black/25 border border-violet-500/20 space-y-1.5">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-300 font-bold">
+                Static Code Problem Understanding (Empirical Signals)
+              </div>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[11px] text-violet-200/85 list-disc pl-4">
+                {problem.static_signals.map((sig, idx) => (
+                  <li key={idx}>{sig}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Core Question / Business Goal / Decision Needed */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">

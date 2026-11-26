@@ -363,6 +363,8 @@ class ProblemDefinitionResult(BaseModel):
     aligned_metrics: List[AlignedMetricSpec] = []
     clarifying_questions: List[str] = []
     recommended_analysis_prompt: str
+    static_signals: List[str] = []
+    synthesis_mode: str = "static_only"  # "static_and_ai" | "static_only"
     ai_provider_used: str = "deterministic"
 
 

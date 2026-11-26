@@ -393,7 +393,12 @@ export function buildOfflineDatasetIntake(
         `What upper threshold on ${guardrail} triggers immediate stakeholder escalation?`,
       ],
       recommended_analysis_prompt,
-      ai_provider_used: "client-preview",
+      static_signals: [
+        `Schema-detected North Star: ${northStar}; Guardrail: ${guardrail}.`,
+        ...(primaryDim ? [`Primary segmentation dimension: ${primaryDim}.`] : []),
+      ],
+      synthesis_mode: "static_only",
+      ai_provider_used: "static-code (client preview)",
     },
   };
 }

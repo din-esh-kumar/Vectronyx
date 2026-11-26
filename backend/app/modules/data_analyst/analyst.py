@@ -22,7 +22,8 @@ from app.modules.data_analyst.data_cleaner import (
     run_dynamic_data_science_pipeline,
 )
 from app.modules.data_analyst.problem_definer import (
-    _build_deterministic_problem_definition,
+    build_static_problem_definition,
+    define_problem_and_align_metrics,
     verify_dataset_readiness,
 )
 from app.modules.data_analyst.profiler import (
@@ -55,6 +56,7 @@ from app.modules.data_analyst.schemas import (
     DataCleansingReport,
     DataScienceSummary,
     LLMDataScienceSynthesis,
+    ProblemDefinitionResult,
 )
 from app.modules.data_analyst.prompts import (
     DASHBOARD_PLANNER_SYSTEM_PROMPT,
@@ -1022,6 +1024,30 @@ async def call_groq_data_science_analyst(
         return None
 
 
+def _format_problem_definition_for_prompt(problem: Optional[ProblemDefinitionResult]) -> str:
+    if not problem:
+        return ""
+    lines = [
+        f"Synthesis Mode: {problem.synthesis_mode} ({problem.ai_provider_used})",
+        f"Core Question: {problem.core_question}",
+        f"Business Goal: {problem.business_goal}",
+        f"Decision Needed: {problem.decision_needed}",
+    ]
+    if problem.static_signals:
+        lines.append("Static Code Empirical Signals:")
+        for sig in problem.static_signals[:5]:
+            lines.append(f"  - {sig}")
+    if problem.aligned_metrics:
+        lines.append("Aligned Stakeholder Metrics:")
+        for m in problem.aligned_metrics[:6]:
+            lines.append(f"  - {m.metric_name} [{m.role} | {m.aggregation}]: {m.stakeholder_alignment}")
+    if problem.stakeholders:
+        lines.append("Stakeholders:")
+        for st in problem.stakeholders[:4]:
+            lines.append(f"  - {st.stakeholder_role} ({', '.join(st.target_metrics)}): {st.primary_concern}")
+    return "\n".join(lines)
+
+
 async def call_llm_dashboard_planner(
     schema_summary: str,
     row_count: int,
@@ -1030,6 +1056,7 @@ async def call_llm_dashboard_planner(
     ground_truth_summary: str = "",
     target_focus: str = "",
     deep_stats_summary: str = "",
+    problem_definition_summary: str = "",
     provider: Optional[str] = "gemini",
 ) -> Optional[DashboardPlan]:
     """
@@ -1044,6 +1071,7 @@ async def call_llm_dashboard_planner(
         ground_truth_summary=ground_truth_summary,
         target_focus=target_focus,
         deep_stats_summary=deep_stats_summary,
+        problem_definition_summary=problem_definition_summary,
     )
     try:
         result = await generate_structured(
@@ -1098,7 +1126,27 @@ def generate_dossier_markdown(plan: DashboardPlan) -> str:
 
 ### 1. EXECUTIVE VERDICT
 > **Boardroom Takeaway:** {dossier.executive_verdict}
+"""
+    if plan.problem_definition:
+        pd_def = plan.problem_definition
+        md += f"""
+---
 
+### 1A. PROBLEM DEFINITION & STAKEHOLDER ALIGNMENT ({pd_def.ai_provider_used})
+* **Core Question:** {pd_def.core_question}
+* **Business Goal:** {pd_def.business_goal}
+* **Decision Needed:** {pd_def.decision_needed}
+"""
+        if pd_def.static_signals:
+            md += "* **Static Code Empirical Signals:**\n"
+            for sig in pd_def.static_signals:
+                md += f"  - {sig}\n"
+        if pd_def.aligned_metrics:
+            md += "\n| Metric | Role | Safe Aggregation | Stakeholder Alignment |\n| :--- | :--- | :--- | :--- |\n"
+            for am in pd_def.aligned_metrics:
+                md += f"| **{am.metric_name}** | `{am.role}` | `{am.aggregation}` | {am.stakeholder_alignment} |\n"
+
+    md += f"""
 ---
 
 ### 2. SITUATION - COMPLICATION - RESOLUTION (SCR) ANALYSIS
@@ -1383,13 +1431,6 @@ def _prepare_cleansed_data_science_context(
     df = verified_df
     cleansing_report = verified_cleansing
     roles = verified_roles
-    problem_definition = _build_deterministic_problem_definition(
-        df=df,
-        roles=roles,
-        verification=verification,
-        dataset_name=dataset_name,
-        user_goal=user_prompt,
-    )
     _, profile, anomalies = profile_dataset(csv_text, roles=roles, df=df)
     target_numerics, target_cats, intent = resolve_prompt_intent_and_columns(df, user_prompt, roles=roles)
 
@@ -1399,6 +1440,17 @@ def _prepare_cleansed_data_science_context(
     quality_audit = compute_data_quality_audit(df, roles)
     correlations, correlation_matrix = compute_correlations_and_matrix(df, target_numerics, roles)
     segment_benchmarks = compute_segment_benchmarks(df, target_cats, target_numerics, roles)
+    problem_definition = build_static_problem_definition(
+        df=df,
+        roles=roles,
+        verification=verification,
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=diagnostics,
+        correlations=correlations,
+        segment_benchmarks=segment_benchmarks,
+        concentration=concentration,
+    )
 
     ds_summary, ds_brief = run_dynamic_data_science_pipeline(
         df=df,
@@ -1529,6 +1581,7 @@ async def _run_dual_model_planning(
             ground_truth_summary=ctx["ground_truth_summary"],
             target_focus=ctx["target_focus"],
             deep_stats_summary=ctx["deep_stats_summary"],
+            problem_definition_summary=_format_problem_definition_for_prompt(ctx.get("problem_definition")),
             provider=planner_provider,
         )
         return res, (get_last_provider_used() or planner_provider)
@@ -1578,6 +1631,19 @@ async def generate_complete_dashboard(
     5. Enriches enterprise Power BI DAX folders, typed Power Query M, and 3-page PBIP layout blueprint.
     """
     ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt, dataset_name=dataset_name)
+    ctx["problem_definition"] = await define_problem_and_align_metrics(
+        df=ctx["df"],
+        roles=ctx["roles"],
+        verification=ctx["dataset_verification"],
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=ctx["diagnostics"],
+        correlations=ctx["correlations"],
+        segment_benchmarks=ctx["segment_benchmarks"],
+        concentration=ctx["concentration"],
+        static_problem=ctx["problem_definition"],
+        generate_fn=generate_structured,
+    )
     llm_plan, ds_summary, models_used = await _run_dual_model_planning(
         ctx,
         user_prompt=user_prompt,
@@ -1630,8 +1696,6 @@ async def generate_complete_dashboard(
     final_plan.cleansing_report = ctx["cleansing_report"]
     final_plan.data_science_summary = ds_summary
     final_plan.models_used = models_used
-    final_plan.dataset_verification = ctx["dataset_verification"]
-    final_plan.problem_definition = ctx["problem_definition"]
     final_plan.dataset_verification = ctx["dataset_verification"]
     final_plan.problem_definition = ctx["problem_definition"]
     return final_plan
@@ -1688,8 +1752,22 @@ async def generate_complete_dashboard_stream(
     yield sse_event("status", {
         "step": 4,
         "stage": "llm_synthesis",
-        "message": f"Phase 4/6: Running collaborative Multi-AI synthesis ({providers_label})...",
+        "message": f"Phase 4/6: Refining problem definition (Static Code + AI) & running Multi-AI synthesis ({providers_label})...",
     })
+
+    ctx["problem_definition"] = await define_problem_and_align_metrics(
+        df=ctx["df"],
+        roles=ctx["roles"],
+        verification=ctx["dataset_verification"],
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=ctx["diagnostics"],
+        correlations=ctx["correlations"],
+        segment_benchmarks=ctx["segment_benchmarks"],
+        concentration=ctx["concentration"],
+        static_problem=ctx["problem_definition"],
+        generate_fn=generate_structured,
+    )
 
     llm_plan, ds_summary, models_used = await _run_dual_model_planning(
         ctx,

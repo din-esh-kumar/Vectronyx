@@ -307,6 +307,8 @@ export interface ProblemDefinitionResult {
   aligned_metrics: AlignedMetricSpec[];
   clarifying_questions: string[];
   recommended_analysis_prompt: string;
+  static_signals?: string[];
+  synthesis_mode?: string;
   ai_provider_used: string;
 }
 
