@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -148,11 +148,12 @@ def clean_and_deduplicate_dataset(raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, D
     # Drop 100%-empty columns
     cols_to_drop_initial: List[str] = []
     for col in list(df.columns):
-        if df[col].isna().all():
-            cols_to_drop_initial.append(col)
+        col_series = cast(pd.Series, df[col])
+        if bool(col_series.isna().all()):
+            cols_to_drop_initial.append(str(col))
             actions.append(CleansingAction(
                 stage="schema_hygiene",
-                target=col,
+                target=str(col),
                 action="drop_empty_column",
                 count=raw_rows,
                 detail=f"Dropped 100%-empty column '{col}'.",
@@ -162,19 +163,22 @@ def clean_and_deduplicate_dataset(raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, D
         df = df.drop(columns=cols_to_drop_initial)
         dropped_cols.extend(cols_to_drop_initial)
 
+    missing_token_list = list(_MISSING_TOKENS)
+
     # 2. Trim whitespace & normalize missing placeholders across object/string columns
     for col in df.columns:
-        if pd.api.types.is_object_dtype(df[col]) or pd.api.types.is_string_dtype(df[col]):
-            orig = df[col].astype("object")
+        col_series = cast(pd.Series, df[col])
+        if pd.api.types.is_object_dtype(col_series) or pd.api.types.is_string_dtype(col_series):
+            orig = col_series.astype("object")
             non_null_mask = orig.notna()
-            if non_null_mask.any():
+            if bool(non_null_mask.any()):
                 trimmed = orig.where(~non_null_mask, orig.astype(str).str.strip())
                 changed_ws = int((trimmed[non_null_mask] != orig[non_null_mask].astype(str)).sum())
                 whitespace_norm_count += changed_ws
 
                 # Replace missing tokens with NaN
                 lowered = trimmed.where(~trimmed.notna(), trimmed.astype(str).str.lower())
-                missing_mask = lowered.isin(_MISSING_TOKENS)
+                missing_mask = lowered.isin(missing_token_list)
                 token_hits = int(missing_mask.sum())
                 if token_hits > 0:
                     trimmed = trimmed.mask(missing_mask, np.nan)
@@ -192,7 +196,8 @@ def clean_and_deduplicate_dataset(raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, D
 
     # 3. Dynamic currency / formatted numeric string coercion & +/-inf cleanup
     for col in list(df.columns):
-        coerced = _try_coerce_numeric_string(df[col])
+        col_series = cast(pd.Series, df[col])
+        coerced = _try_coerce_numeric_string(col_series)
         if coerced is not None:
             df[col] = coerced
             type_coercions.append(f"{col}: string -> float64")
@@ -291,7 +296,7 @@ def clean_and_deduplicate_dataset(raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, D
     for col in list(df.columns):
         if df.shape[1] - len(cols_to_drop_redundancy) <= min_keep_cols:
             break
-        if _is_sequential_unnamed_index(df[col], col):
+        if _is_sequential_unnamed_index(cast(pd.Series, df[col]), str(col)):
             cols_to_drop_redundancy.append(col)
             redundant_cols.append(col)
             actions.append(CleansingAction(
@@ -404,7 +409,7 @@ def clean_and_deduplicate_dataset(raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, D
         if pd.api.types.is_numeric_dtype(df[c]) and not ID_NAME_RE.search(c)
     ]
     if len(num_cols) >= 2 and len(df) >= 4:
-        corr = df[num_cols].corr().abs()
+        corr = cast(pd.DataFrame, df[num_cols]).corr().abs()
         for i in range(len(num_cols)):
             c1 = num_cols[i]
             if c1 in collinear_pruned:
@@ -495,13 +500,15 @@ def run_dynamic_data_science_pipeline(
     clusters: List[ClusterProfile] = []
 
     if len(ml_cols) >= 2 and len(df) >= 6:
-        X_ml = df[ml_cols].copy().astype(float)
+        X_ml = cast(pd.DataFrame, df[ml_cols].copy().astype(float))
         for c in ml_cols:
-            X_ml[c] = X_ml[c].fillna(X_ml[c].median())
-            q1, q3 = float(X_ml[c].quantile(0.25)), float(X_ml[c].quantile(0.75))
+            col_vals = cast(pd.Series, X_ml[c])
+            X_ml[c] = col_vals.fillna(col_vals.median())
+            col_vals = cast(pd.Series, X_ml[c])
+            q1, q3 = float(col_vals.quantile(0.25)), float(col_vals.quantile(0.75))
             iqr = q3 - q1
             if iqr > 0:
-                X_ml[c] = X_ml[c].clip(lower=q1 - 3.0 * iqr, upper=q3 + 3.0 * iqr)
+                X_ml[c] = col_vals.clip(lower=q1 - 3.0 * iqr, upper=q3 + 3.0 * iqr)
 
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X_ml)
@@ -522,7 +529,7 @@ def run_dynamic_data_science_pipeline(
             best_sil = -1.0
             best_labels: Optional[np.ndarray] = None
             for k in range(2, max_k + 1):
-                km = KMeans(n_clusters=k, n_init=10, random_state=42)
+                km = KMeans(n_clusters=k, n_init=cast(Any, 10), random_state=42)
                 labels = km.fit_predict(X_scaled)
                 if len(set(labels)) < 2:
                     continue
@@ -538,17 +545,18 @@ def run_dynamic_data_science_pipeline(
                 temp = X_ml.copy()
                 temp["_cluster"] = best_labels
                 total_n = len(temp)
-                for cid in sorted(temp["_cluster"].unique()):
-                    sub = temp[temp["_cluster"] == cid]
+                cluster_series = cast(pd.Series, temp["_cluster"])
+                for cid in sorted(cluster_series.unique()):
+                    sub = cast(pd.DataFrame, temp[cluster_series == cid])
                     centroid = {
-                        col: round(float(sub[col].mean()), 2)
+                        str(col): round(float(cast(pd.Series, sub[col]).mean()), 2)
                         for col in ml_cols[:4]
                     }
                     # Label cluster dynamically vs global mean on target_metric
                     label = f"Cluster {int(cid) + 1}"
                     if target_metric and target_metric in sub.columns:
-                        g_mean = float(temp[target_metric].mean())
-                        c_mean = float(sub[target_metric].mean())
+                        g_mean = float(cast(pd.Series, temp[target_metric]).mean())
+                        c_mean = float(cast(pd.Series, sub[target_metric]).mean())
                         if g_mean != 0:
                             if c_mean >= g_mean * 1.15:
                                 label = f"High-{target_metric} Cohort"
@@ -585,16 +593,17 @@ def run_dynamic_data_science_pipeline(
             try:
                 X_parts: List[pd.DataFrame] = []
                 if feature_nums:
-                    num_df = df[feature_nums].copy().astype(float)
+                    num_df = cast(pd.DataFrame, df[feature_nums].copy().astype(float))
                     for fc in feature_nums:
-                        num_df[fc] = num_df[fc].fillna(num_df[fc].median())
+                        fc_series = cast(pd.Series, num_df[fc])
+                        num_df[fc] = fc_series.fillna(fc_series.median())
                     X_parts.append(num_df)
                 if cat_features:
-                    cat_df = pd.get_dummies(df[cat_features].astype(str), drop_first=False, dtype=float)
+                    cat_df = cast(pd.DataFrame, pd.get_dummies(df[cat_features].astype(str), drop_first=False, dtype=float))
                     X_parts.append(cat_df)
 
-                X_pred = pd.concat(X_parts, axis=1)
-                y_pred_series = df[target_metric].astype(float).fillna(df[target_metric].median())
+                X_pred = cast(pd.DataFrame, pd.concat(X_parts, axis=1))
+                y_pred_series = cast(pd.Series, df[target_metric].astype(float).fillna(df[target_metric].median()))
                 if X_pred.shape[1] >= 1 and y_pred_series.nunique() > 1:
                     rf = RandomForestRegressor(
                         n_estimators=100,
@@ -620,7 +629,8 @@ def run_dynamic_data_science_pipeline(
                     for feat_name, imp in ranked:
                         corr_val = 0.0
                         try:
-                            corr_val = safe_float(X_pred[feat_name].corr(y_pred_series), 0.0)
+                            feat_series = cast(pd.Series, X_pred[feat_name])
+                            corr_val = safe_float(feat_series.corr(y_pred_series), 0.0)
                         except Exception:
                             corr_val = 0.0
                         feature_importances.append(

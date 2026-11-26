@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, cast
 
 import pandas as pd
 
@@ -86,7 +86,7 @@ def build_enterprise_powerquery_m(
     text_cols: List[str] = []
     for col in list(df.columns)[:40]:
         safe_col = str(col).replace('"', '""')
-        m_type = _infer_m_type(df[col], roles.get(col, {}))
+        m_type = _infer_m_type(cast(pd.Series, df[col]), roles.get(str(col), {}))
         type_pairs.append(f'{{"{safe_col}", {m_type}}}')
         if m_type == "type text":
             text_cols.append(f'{{"{safe_col}", Text.Trim, type text}}')
