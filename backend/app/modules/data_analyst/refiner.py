@@ -9,6 +9,7 @@ or completes the requested N iterations.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
@@ -27,7 +28,13 @@ from app.modules.data_analyst.schemas import (
     RefinementIterationRecord,
     ReportCritique,
 )
-from app.services.llm.instructor_client import generate_structured
+from app.services.llm.instructor_client import (
+    format_provider_model_label,
+    generate_structured,
+    get_configured_providers,
+    get_last_provider_used,
+    is_provider_on_cooldown,
+)
 
 logger = logging.getLogger("vectronyx.analyst_refiner")
 
@@ -469,6 +476,20 @@ def _compact_plan_for_prompt(plan: DashboardPlan) -> str:
     return json.dumps(dumped, separators=(",", ":"), default=str)[:9500]
 
 
+def _choose_refinement_provider(iteration: int, role: str) -> str:
+    """
+    Round-robin rotate across configured, non-rate-limited providers (NVIDIA NIM, Groq, Gemini)
+    to spread RPM/TPM load across providers during N-iteration refinement.
+    """
+    configured = get_configured_providers()
+    if not configured:
+        return "groq" if role == "critique" else "gemini"
+    healthy = [p for p in configured if not is_provider_on_cooldown(p)]
+    pool = healthy or configured
+    offset = 0 if role == "critique" else 1
+    return pool[(max(1, iteration) - 1 + offset) % len(pool)]
+
+
 async def critique_plan_with_llm(
     plan: DashboardPlan,
     *,
@@ -481,8 +502,9 @@ async def critique_plan_with_llm(
     deterministic_defects: List[str],
     iteration: int,
     max_iterations: int,
-    provider: Optional[str] = "groq",
+    provider: Optional[str] = None,
 ) -> Optional[ReportCritique]:
+    resolved_provider = provider or _choose_refinement_provider(iteration, "critique")
     try:
         user_msg = build_peer_review_user_prompt(
             dataset_name=dataset_name,
@@ -500,7 +522,7 @@ async def critique_plan_with_llm(
             response_model=ReportCritique,
             system_prompt=PEER_REVIEW_SYSTEM_PROMPT,
             user_prompt=user_msg,
-            provider=provider,
+            provider=resolved_provider,
             max_retries=2,
             temperature=0.15,
             max_tokens=PEER_REVIEW_MAX_TOKENS,
@@ -521,8 +543,9 @@ async def rewrite_plan_with_llm(
     critique_summary: str,
     iteration: int,
     max_iterations: int,
-    provider: Optional[str] = "gemini",
+    provider: Optional[str] = None,
 ) -> Optional[DashboardPlan]:
+    resolved_provider = provider or _choose_refinement_provider(iteration, "rewrite")
     try:
         user_msg = build_refinement_user_prompt(
             dataset_name=dataset_name,
@@ -539,7 +562,7 @@ async def rewrite_plan_with_llm(
             response_model=LLMDashboardDraft,
             system_prompt=REFINEMENT_SYSTEM_PROMPT,
             user_prompt=user_msg,
-            provider=provider,
+            provider=resolved_provider,
             max_retries=2,
             temperature=0.2,
             max_tokens=DEEP_PLANNER_MAX_TOKENS,
@@ -601,6 +624,7 @@ async def run_iterative_refinement_stream(
     max_iterations: int = DEFAULT_REFINEMENT_ITERATIONS,
     target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
     enable_llm_refinement: bool = True,
+    participating_models: Optional[List[str]] = None,
 ) -> AsyncGenerator[Tuple[str, Any], None]:
     """
     Runs N iterations of Principal Peer Review + Max-Token Rewrite until the
@@ -616,10 +640,15 @@ async def run_iterative_refinement_stream(
     final_score = 0.0
 
     for iteration in range(1, n_iters + 1):
+        if enable_llm_refinement and iteration > 1 and len(get_configured_providers()) <= 1:
+            # Gentle pacing when only a single provider is active to avoid per-second burst 429s
+            await asyncio.sleep(0.5)
+
         det_score, det_rubric, det_defects = evaluate_plan_deterministic(current_plan, df, roles)
 
         llm_critique: Optional[ReportCritique] = None
         if enable_llm_refinement:
+            critique_provider = _choose_refinement_provider(iteration, "critique")
             yield (
                 "status",
                 {
@@ -627,7 +656,7 @@ async def run_iterative_refinement_stream(
                     "iteration": iteration,
                     "max_iterations": n_iters,
                     "score": det_score,
-                    "message": f"Iteration {iteration}/{n_iters}: Principal Peer-Reviewer auditing draft (structural baseline {det_score:.0f}/100)...",
+                    "message": f"Iteration {iteration}/{n_iters}: Principal Peer-Reviewer ({critique_provider}) auditing draft (baseline {det_score:.0f}/100)...",
                 },
             )
             llm_critique = await critique_plan_with_llm(
@@ -641,7 +670,12 @@ async def run_iterative_refinement_stream(
                 deterministic_defects=det_defects,
                 iteration=iteration,
                 max_iterations=n_iters,
+                provider=critique_provider,
             )
+            if llm_critique is not None and participating_models is not None:
+                used_label = format_provider_model_label(get_last_provider_used() or critique_provider)
+                if used_label not in participating_models:
+                    participating_models.append(used_label)
 
         if llm_critique is not None:
             blended_rubric = {
@@ -723,6 +757,7 @@ async def run_iterative_refinement_stream(
             "CONCRETE UPGRADE DIRECTIVES:",
             *[f"- {u}" for u in upgrade_directives],
         ]
+        rewrite_provider = _choose_refinement_provider(iteration, "rewrite")
         rewritten_raw = await rewrite_plan_with_llm(
             current_plan,
             dataset_name=dataset_name,
@@ -733,9 +768,14 @@ async def run_iterative_refinement_stream(
             critique_summary="\n".join(critique_lines),
             iteration=iteration + 1,
             max_iterations=n_iters,
+            provider=rewrite_provider,
         )
 
         if rewritten_raw is not None:
+            if participating_models is not None:
+                used_label = format_provider_model_label(get_last_provider_used() or rewrite_provider)
+                if used_label not in participating_models:
+                    participating_models.append(used_label)
             current_plan = assemble_fn(rewritten_raw)
             current_plan = enrich_plan_for_powerbi(current_plan, df, roles, target_numerics, target_cats)
             applied = upgrade_directives[:5] or ["Deepened SCR narrative, KPI quantification, visual insights, and DAX measures."]

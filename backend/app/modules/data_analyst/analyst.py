@@ -2,14 +2,21 @@
 import asyncio
 import io
 import logging
-from typing import Dict, Any, List, Optional, Set, AsyncGenerator, cast
+from typing import Dict, Any, List, Optional, Set, Tuple, AsyncGenerator, cast
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from app.core.config import settings
 from app.core.sse import sse_event
-from app.services.llm.instructor_client import generate_structured
+from app.services.llm.instructor_client import (
+    format_provider_model_label,
+    generate_structured,
+    get_configured_providers,
+    get_last_provider_used,
+    is_provider_on_cooldown,
+    normalize_provider_name,
+)
 from app.modules.data_analyst.data_cleaner import (
     clean_and_deduplicate_dataset,
     run_dynamic_data_science_pipeline,
@@ -962,13 +969,21 @@ async def call_groq_data_science_analyst(
     cleansing_report: DataCleansingReport,
     ds_brief: str,
     deep_stats_summary: str,
+    provider: Optional[str] = None,
 ) -> Optional[LLMDataScienceSynthesis]:
     """
-    Invokes Groq (fast quantitative reasoning model) to audit the automated cleansing,
-    redundancy pruning, K-Means clustering, PCA, and RandomForest driver model.
+    Invokes a quantitative reasoning model (Groq, NVIDIA NIM, or Gemini) to audit the automated
+    cleansing, redundancy pruning, K-Means clustering, PCA, and RandomForest driver model.
     """
-    if not (settings.GROQ_API_KEY or "").strip():
+    configured = get_configured_providers()
+    if not configured:
         return None
+    if provider:
+        ds_provider = provider
+    elif "groq" in configured and not is_provider_on_cooldown("groq"):
+        ds_provider = "groq"
+    else:
+        ds_provider = configured[0]
 
     sys_prompt = (
         "You are a Lead Applied Data Scientist & ML Engineer. "
@@ -993,7 +1008,7 @@ async def call_groq_data_science_analyst(
             response_model=LLMDataScienceSynthesis,
             system_prompt=sys_prompt,
             user_prompt=user_msg,
-            provider="groq",
+            provider=ds_provider,
             max_retries=2,
             temperature=0.15,
             max_tokens=2048,
@@ -1421,6 +1436,41 @@ def _prepare_cleansed_data_science_context(
     }
 
 
+def _choose_planning_providers() -> Tuple[str, str]:
+    """
+    Select distinct healthy providers for (ds_provider, planner_provider) when >=2 providers
+    are configured so NVIDIA NIM, Groq, and Gemini collaborate without colliding on the same RPM bucket.
+    """
+    configured = get_configured_providers()
+    healthy = [p for p in configured if not is_provider_on_cooldown(p)]
+    pool = healthy or configured
+
+    preferred = normalize_provider_name(settings.LLM_PROVIDER)
+    if preferred in pool:
+        planner_provider = preferred
+    elif "gemini" in pool:
+        planner_provider = "gemini"
+    elif "nvidia" in pool:
+        planner_provider = "nvidia"
+    elif pool:
+        planner_provider = pool[0]
+    else:
+        planner_provider = "gemini"
+
+    # Pick a different healthy provider for the Data Science Audit when available
+    ds_candidates = [p for p in ("groq", "nvidia", "gemini") if p in pool and p != planner_provider]
+    if ds_candidates:
+        ds_provider = ds_candidates[0]
+    elif "groq" in pool:
+        ds_provider = "groq"
+    elif pool:
+        ds_provider = pool[0]
+    else:
+        ds_provider = "groq"
+
+    return ds_provider, planner_provider
+
+
 async def _run_dual_model_planning(
     ctx: Dict[str, Any],
     *,
@@ -1428,45 +1478,65 @@ async def _run_dual_model_planning(
     dataset_name: str,
 ) -> tuple[Optional[DashboardPlan], DataScienceSummary, List[str]]:
     """
-    Collaboratively executes BOTH Groq (Data Science & Cleansing Architect)
-    and Gemini (Executive BI Planner) in parallel/sequence with automatic failover.
+    Collaboratively executes Data Science & Cleansing Audit and Executive BI Planning
+    across configured AI providers (NVIDIA NIM, Groq, Gemini) with rate-limit-aware pacing
+    and automatic failover.
     """
     ds_summary: DataScienceSummary = ctx["ds_summary"]
     cleansing_report: DataCleansingReport = ctx["cleansing_report"]
 
-    groq_task = call_groq_data_science_analyst(
-        dataset_name=dataset_name,
-        user_prompt=user_prompt,
-        schema_summary=ctx["schema_summary"],
-        cleansing_report=cleansing_report,
-        ds_brief=ctx["ds_brief"],
-        deep_stats_summary=ctx["deep_stats_summary"],
-    )
-    gemini_task = call_llm_dashboard_planner(
-        schema_summary=ctx["schema_summary"],
-        row_count=ctx["profile"].row_count,
-        user_prompt=user_prompt,
-        dataset_name=dataset_name,
-        ground_truth_summary=ctx["ground_truth_summary"],
-        target_focus=ctx["target_focus"],
-        deep_stats_summary=ctx["deep_stats_summary"],
-        provider="gemini",
-    )
+    ds_provider, planner_provider = _choose_planning_providers()
 
-    groq_ds, llm_plan = await asyncio.gather(groq_task, gemini_task)
+    async def _run_ds() -> tuple[Optional[LLMDataScienceSynthesis], Optional[str]]:
+        res = await call_groq_data_science_analyst(
+            dataset_name=dataset_name,
+            user_prompt=user_prompt,
+            schema_summary=ctx["schema_summary"],
+            cleansing_report=cleansing_report,
+            ds_brief=ctx["ds_brief"],
+            deep_stats_summary=ctx["deep_stats_summary"],
+            provider=ds_provider,
+        )
+        return res, (get_last_provider_used() or ds_provider)
+
+    async def _run_planner() -> tuple[Optional[DashboardPlan], Optional[str]]:
+        res = await call_llm_dashboard_planner(
+            schema_summary=ctx["schema_summary"],
+            row_count=ctx["profile"].row_count,
+            user_prompt=user_prompt,
+            dataset_name=dataset_name,
+            ground_truth_summary=ctx["ground_truth_summary"],
+            target_focus=ctx["target_focus"],
+            deep_stats_summary=ctx["deep_stats_summary"],
+            provider=planner_provider,
+        )
+        return res, (get_last_provider_used() or planner_provider)
+
+    # Run in parallel when distinct providers handle each role; run sequentially if sharing one provider to avoid burst 429s
+    if ds_provider != planner_provider:
+        (groq_ds, actual_ds_provider), (llm_plan, actual_planner_provider) = await asyncio.gather(
+            _run_ds(), _run_planner()
+        )
+    else:
+        llm_plan, actual_planner_provider = await _run_planner()
+        groq_ds, actual_ds_provider = await _run_ds()
 
     models_used: List[str] = []
     if groq_ds is not None:
-        models_used.append(f"groq/{settings.GROQ_MODEL}")
+        ds_label = format_provider_model_label(actual_ds_provider or ds_provider)
+        if ds_label not in models_used:
+            models_used.append(ds_label)
         ds_summary.ai_data_science_verdict = (
             f"{groq_ds.cleansing_assessment} {groq_ds.predictive_driver_takeaway}"
         ).strip()
         if llm_plan is not None and llm_plan.dossier is not None:
             for rec in groq_ds.feature_engineering_recommendations[:2]:
                 if rec not in llm_plan.dossier.methodological_notes:
-                    llm_plan.dossier.methodological_notes.append(f"[Groq DS] {rec}")
+                    llm_plan.dossier.methodological_notes.append(f"[DS Audit] {rec}")
     if llm_plan is not None:
-        models_used.append(f"gemini/{settings.GEMINI_MODEL}")
+        planner_label = format_provider_model_label(actual_planner_provider or planner_provider)
+        if planner_label not in models_used:
+            models_used.append(planner_label)
     ds_summary.models_participated = list(models_used)
     return llm_plan, ds_summary, models_used
 
@@ -1531,9 +1601,11 @@ async def generate_complete_dashboard(
         max_iterations=refinement_iterations,
         target_quality_score=target_quality_score,
         enable_llm_refinement=(llm_plan is not None),
+        participating_models=models_used,
     ):
         if evt_type == "done":
             final_plan = payload
+    ds_summary.models_participated = list(models_used)
     final_plan.cleansing_report = ctx["cleansing_report"]
     final_plan.data_science_summary = ds_summary
     final_plan.models_used = models_used
@@ -1582,10 +1654,12 @@ async def generate_complete_dashboard_stream(
         ),
     })
 
+    active_providers = get_configured_providers()
+    providers_label = " + ".join(p.upper() for p in active_providers) if active_providers else "Multi-AI"
     yield sse_event("status", {
         "step": 4,
         "stage": "llm_synthesis",
-        "message": "Phase 4/6: Running Dual-AI synthesis (Groq Data Science Architect + Gemini Executive Planner)...",
+        "message": f"Phase 4/6: Running collaborative Multi-AI synthesis ({providers_label})...",
     })
 
     llm_plan, ds_summary, models_used = await _run_dual_model_planning(
@@ -1639,12 +1713,14 @@ async def generate_complete_dashboard_stream(
         max_iterations=n_iters,
         target_quality_score=target_quality_score,
         enable_llm_refinement=(llm_plan is not None),
+        participating_models=models_used,
     ):
         if evt_type == "status":
             yield sse_event("status", {"step": 5, **payload})
         elif evt_type == "done":
             final_plan = payload
 
+    ds_summary.models_participated = list(models_used)
     final_plan.cleansing_report = ctx["cleansing_report"]
     final_plan.data_science_summary = ds_summary
     final_plan.models_used = models_used

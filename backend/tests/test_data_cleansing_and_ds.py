@@ -154,3 +154,83 @@ async def test_dual_model_groq_and_gemini_orchestration(monkeypatch: pytest.Monk
     assert "Removed 1 duplicate row" in plan.data_science_summary.ai_data_science_verdict
     assert any(m.startswith("groq/") for m in plan.models_used)
     assert any(m.startswith("gemini/") for m in plan.models_used)
+
+
+@pytest.mark.asyncio
+async def test_tri_provider_nvidia_nim_groq_gemini_load_spreading(monkeypatch: pytest.MonkeyPatch):
+    """Verify NVIDIA NIM collaborates with Groq and Gemini across planning and refinement to spread RPM load."""
+    from app.services.llm.instructor_client import clear_provider_cooldowns
+
+    clear_provider_cooldowns()
+    monkeypatch.setattr(analyst_mod.settings, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(analyst_mod.settings, "NVIDIA_API_KEY", "nvapi-mock-test-key-123456")
+    monkeypatch.setattr(analyst_mod.settings, "GROQ_API_KEY", "gsk_test_dummy_123456")
+    monkeypatch.setattr(analyst_mod.settings, "GEMINI_API_KEY", "AIzaSyTestDummyKey123456")
+
+    seen_providers: list[str] = []
+
+    async def fake_generate_structured(*, response_model, provider=None, **kwargs):
+        seen_providers.append(provider or "default")
+        if response_model is LLMDataScienceSynthesis:
+            return LLMDataScienceSynthesis(
+                cleansing_assessment="Removed 1 duplicate row and 3 redundant columns.",
+                feature_engineering_recommendations=["Use Revenue/Cost spread ratio."],
+                cluster_interpretations=["High-Revenue cohort leads portfolio margin."],
+                predictive_driver_takeaway="Profit and Cost explain primary variance.",
+            )
+        if response_model is ReportCritique:
+            return ReportCritique(
+                overall_score=80.0,
+                empirical_grounding=80.0,
+                executive_depth=80.0,
+                statistical_rigor=80.0,
+                visual_storytelling=80.0,
+                powerbi_dax_readiness=80.0,
+                actionability_roi=80.0,
+                passes_principal_bar=False,
+                critical_defects=["Deepen quantile narrative."],
+            )
+        return DashboardPlan(
+            title="Multi-AI Executive Report",
+            summary="Collaborative NVIDIA NIM + Groq + Gemini synthesis.",
+            dataset_name="messy.csv",
+            kpis=[
+                KPISpec(
+                    id="kpi_1",
+                    title="Total Revenue",
+                    value="$1.2M",
+                    formula_dax="Total Revenue = SUM('Dataset'[Revenue])",
+                    formula_tableau="SUM([Revenue])",
+                    rationale="Primary revenue metric",
+                )
+            ],
+            visuals=[
+                ChartVisualSpec(
+                    id="vis_1",
+                    title="Revenue by Region",
+                    chart_type="bar",
+                    x_axis="Region",
+                    y_axis="Revenue",
+                    aggregation="sum",
+                    description="Regional breakdown",
+                )
+            ],
+        )
+
+    with (
+        patch("app.modules.data_analyst.analyst.generate_structured", side_effect=fake_generate_structured),
+        patch("app.modules.data_analyst.refiner.generate_structured", side_effect=fake_generate_structured),
+    ):
+        plan = await analyst_mod.generate_complete_dashboard(
+            csv_text=MESSY_CSV,
+            user_prompt="Analyze revenue drivers and churn cohorts",
+            dataset_name="messy.csv",
+            refinement_iterations=3,
+        )
+
+    assert "nvidia" in seen_providers
+    assert "groq" in seen_providers
+    assert "gemini" in seen_providers
+    assert any(m.startswith("nvidia/") for m in plan.models_used)
+    assert any(m.startswith("groq/") for m in plan.models_used)
+    assert any(m.startswith("gemini/") for m in plan.models_used)
