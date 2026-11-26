@@ -1,5 +1,5 @@
 // frontend/src/features/data-analyst/DataAnalyst.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -15,7 +15,6 @@ import {
   FileText,
   Layers,
   Printer,
-  RefreshCw,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -42,6 +41,7 @@ import {
 } from "./QuantitativeSections";
 import { ReportCharts } from "./ReportCharts";
 import { BIReportViewer } from "./BIReportViewer";
+import { AnalysisPromptCard } from "./AnalysisPromptCard";
 import {
   SAMPLE_FINTECH_CSV,
   SAMPLE_SAAS_CSV,
@@ -128,6 +128,7 @@ const DEFAULT_PROMPT =
 export default function DataAnalyst() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSample = searchParams.get("sample");
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [csvContent, setCsvContent] = useState<string>(() =>
     initialSample === "saas"
@@ -264,6 +265,12 @@ export default function DataAnalyst() {
     if (!csvContent.trim()) {
       setErrorMsg("Please upload a CSV or load a sample dataset first.");
       toast.error("Please load or upload a CSV dataset");
+      return;
+    }
+    if (!userPrompt.trim()) {
+      setErrorMsg("Please enter an analysis prompt or select a preset first.");
+      toast.error("Please enter an analysis prompt");
+      promptTextareaRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -644,106 +651,18 @@ export default function DataAnalyst() {
           )}
         </div>
 
-        <div className="lg:col-span-7 p-5 rounded-2xl glass-card-bronze border border-amber-500/25 flex flex-col justify-between space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-amber-200 flex items-center gap-2 mb-3">
-              <Target className="w-4 h-4 text-amber-400" />
-              <span>2. Analysis Prompt</span>
-            </h2>
-
-            <textarea
-              value={userPrompt}
-              onChange={(e) => setUserPrompt(e.target.value)}
-              rows={3}
-              placeholder="State the analytical objective, variance question, or decision hypothesis..."
-              className="w-full text-xs sm:text-sm border border-violet-500/25 bg-violet-950/40 rounded-xl p-3 focus-vb text-white resize-none font-sans placeholder-violet-400/40"
-            />
-
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {dynamicPromptChips.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setUserPrompt(chip)}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-violet-900/30 hover:bg-violet-800/40 text-violet-200 border border-violet-500/20 transition cursor-pointer text-left"
-                >
-                  + {chip}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3 pt-3 border-t border-amber-500/15">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-                <span className="text-amber-300/90 font-semibold">Refinement Passes (16K Max Tokens):</span>
-                {[
-                  { n: 1, label: "1× Draft" },
-                  { n: 3, label: "3× Senior" },
-                  { n: 5, label: "5× Principal" },
-                  { n: 8, label: "8× Boardroom" },
-                ].map((opt) => (
-                  <button
-                    key={opt.n}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => setRefinementIterations(opt.n)}
-                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
-                      refinementIterations === opt.n
-                        ? "bg-amber-500/25 text-amber-200 border-amber-400/60 font-bold"
-                        : "bg-violet-950/50 text-violet-300/75 border-violet-500/20 hover:border-amber-400/35"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <span className="text-[10px] font-mono text-emerald-300/80">
-                Target ≥ 92/100 · 3-Page Power BI (.pbip)
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                {loading && streamingStatus && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400" />
-                      <span className="truncate">{streamingStatus}</span>
-                    </div>
-                    {iterationLog.length > 1 && (
-                      <div className="max-h-20 overflow-y-auto space-y-0.5 pl-5 text-[10px] font-mono text-violet-300/70">
-                        {iterationLog.slice(0, -1).map((line, i) => (
-                          <div key={i} className="truncate">
-                            ✓ {line}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleGenerateDashboard}
-                disabled={loading}
-                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30 shrink-0"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
-                    <span>Refining ({refinementIterations}×)...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-[#E8A276]" />
-                    <span>Generate Principal Report ({refinementIterations}×)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AnalysisPromptCard
+          userPrompt={userPrompt}
+          setUserPrompt={setUserPrompt}
+          dynamicPromptChips={dynamicPromptChips}
+          loading={loading}
+          refinementIterations={refinementIterations}
+          setRefinementIterations={setRefinementIterations}
+          streamingStatus={streamingStatus}
+          iterationLog={iterationLog}
+          onGenerate={handleGenerateDashboard}
+          textareaRef={promptTextareaRef}
+        />
       </div>
 
       {errorMsg && (
