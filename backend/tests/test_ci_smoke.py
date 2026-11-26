@@ -112,6 +112,7 @@ def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():
     fake_groq = "gsk_" + ("Ab12Cd34Ef56" * 3)
     fake_gemini = "AIza" + ("Sy98Zy76Xw54Vu32Ts" * 2)[:35]
     fake_oauth = "AQ.Ab8" + ("Q1w2E3r4T5y6" * 3)
+    fake_nvidia = "nvapi-" + ("Ab12Cd34Ef56" * 3)
     fake_sb_secret = "sb_secret_" + ("ZyXw9876" * 3)
     fake_db = "postgresql://postgres:" + "RealProdPass9988" + "@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
@@ -119,6 +120,7 @@ def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():
         f'GROQ_API_KEY="{fake_groq}"',
         f'GEMINI_API_KEY="{fake_gemini}"',
         f'OAUTH="{fake_oauth}"',
+        f'NVIDIA_API_KEY="{fake_nvidia}"',
         f'SB="{fake_sb_secret}"',
         f'DATABASE_URL="{fake_db}"',
         'const k = import.meta.env.VITE_GEMINI_API_KEY;',
@@ -128,6 +130,7 @@ def test_ci_secret_scanner_detects_real_shapes_and_ignores_mocks():
     assert "groq_api_key" in rules
     assert "google_api_key" in rules
     assert "gemini_oauth_token" in rules
+    assert "nvidia_api_key" in rules
     assert "supabase_secret_key" in rules
     assert "postgres_credential_uri" in rules
     assert "forbidden_client_secret_env" in rules

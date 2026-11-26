@@ -82,6 +82,7 @@ PATTERNS = {
     "groq_api_key": re.compile(r"\bgsk_[A-Za-z0-9_]{20,}\b"),
     "google_api_key": re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
     "gemini_oauth_token": re.compile(r"\bAQ\.Ab8[0-9A-Za-z_-]{20,}\b"),
+    "nvidia_api_key": re.compile(r"\bnvapi-[A-Za-z0-9_-]{20,}\b"),
     "supabase_secret_key": re.compile(r"\bsb_secret_[0-9A-Za-z_-]{15,}\b"),
     "huggingface_token": re.compile(r"\bhf_[A-Za-z]{2}[A-Za-z0-9]{18,}\b"),
     "github_token": re.compile(r"\b(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b"),
@@ -136,7 +137,7 @@ def scan_text(
         for rule, pattern in PATTERNS.items():
             for match in pattern.finditer(line):
                 val = match.group(0)
-                if rule in ("groq_api_key", "google_api_key") and _is_placeholder_token(val):
+                if rule in ("groq_api_key", "google_api_key", "nvidia_api_key") and _is_placeholder_token(val):
                     continue
                 if rule == "groq_api_key" and "_" in val[4:] and len(val) < 40:
                     # Short synthetic test identifiers using snake_case words (e.g., mock docs)
