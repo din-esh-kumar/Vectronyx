@@ -10,8 +10,13 @@ from app.services.llm.instructor_client import (
     generate_structured,
     get_groq_instructor,
     get_genai_instructor,
+    get_nvidia_instructor,
     _execute_with_groq,
     _execute_with_gemini,
+    _execute_with_nvidia,
+    clear_provider_cooldowns,
+    get_last_provider_used,
+    is_provider_on_cooldown,
     InstructorStructuredOutputError,
 )
 from app.modules.research_agent.schemas import (
@@ -193,6 +198,83 @@ def test_instructor_client_factories():
     genai_ic = get_genai_instructor(api_key="mock_gemini_key")
     assert genai_ic is not None
     assert hasattr(genai_ic, "create")
+
+    nvidia_ic = get_nvidia_instructor(api_key="nvapi-mock-test-key-123456")
+    assert nvidia_ic is not None
+    assert hasattr(nvidia_ic, "create")
+
+
+def test_get_nvidia_instructor_missing_key():
+    """Verify get_nvidia_instructor raises ValueError if API key is not configured."""
+    with patch("app.core.config.settings.NVIDIA_API_KEY", ""):
+        with pytest.raises(ValueError) as exc:
+            get_nvidia_instructor()
+        assert "NVIDIA_API_KEY is not configured" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_nvidia_nim_structured_output_and_provider_routing():
+    """Verify NVIDIA NIM execution and generate_structured provider='nvidia' routing."""
+    class SimpleOut(BaseModel):
+        msg: str
+
+    mock_client = AsyncMock()
+    mock_client.create.return_value = SimpleOut(msg="NVIDIA NIM Success")
+
+    with patch("app.services.llm.instructor_client.get_nvidia_instructor", return_value=mock_client):
+        res = await generate_structured(
+            response_model=SimpleOut,
+            user_prompt="Summarize dataset",
+            provider="nvidia",
+        )
+        assert res.msg == "NVIDIA NIM Success"
+        assert get_last_provider_used() == "nvidia"
+        assert mock_client.create.called
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_cooldown_failover_to_nvidia_nim():
+    """Verify 429 rate-limit places provider on cooldown and routes subsequent calls to NVIDIA NIM."""
+    class SimpleOut(BaseModel):
+        msg: str
+
+    clear_provider_cooldowns()
+    try:
+        with (
+            patch("app.core.config.settings.NVIDIA_API_KEY", "nvapi-mock-test-key-123456"),
+            patch("app.services.llm.instructor_client._execute_with_groq", new_callable=AsyncMock) as mock_groq,
+            patch("app.services.llm.instructor_client._execute_with_gemini", new_callable=AsyncMock) as mock_gemini,
+            patch("app.services.llm.instructor_client._execute_with_nvidia", new_callable=AsyncMock) as mock_nvidia,
+        ):
+            mock_groq.side_effect = RuntimeError("Error 429: rate limit exceeded")
+            mock_gemini.side_effect = RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded")
+            mock_nvidia.return_value = SimpleOut(msg="NVIDIA Rescued")
+
+            res1 = await generate_structured(
+                response_model=SimpleOut,
+                user_prompt="Run analysis",
+                provider="groq",
+            )
+            assert res1.msg == "NVIDIA Rescued"
+            assert get_last_provider_used() == "nvidia"
+            assert is_provider_on_cooldown("groq")
+            assert is_provider_on_cooldown("gemini")
+            assert mock_groq.call_count == 1
+            assert mock_gemini.call_count == 1
+            assert mock_nvidia.call_count == 1
+
+            # Second call with provider='groq' should bypass groq/gemini cooldowns and hit nvidia directly
+            res2 = await generate_structured(
+                response_model=SimpleOut,
+                user_prompt="Second pass",
+                provider="groq",
+            )
+            assert res2.msg == "NVIDIA Rescued"
+            assert mock_groq.call_count == 1
+            assert mock_gemini.call_count == 1
+            assert mock_nvidia.call_count == 2
+    finally:
+        clear_provider_cooldowns()
 
 
 def test_get_groq_instructor_missing_key():

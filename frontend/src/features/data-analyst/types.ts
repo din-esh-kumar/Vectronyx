@@ -204,6 +204,120 @@ export interface PowerBiPageBlueprint {
   visuals?: string[];
 }
 
+export interface CleansingAction {
+  stage: string;
+  target: string;
+  action: string;
+  count: number;
+  detail: string;
+}
+
+export interface DataCleansingReport {
+  raw_rows: number;
+  cleaned_rows: number;
+  rows_removed: number;
+  duplicates_removed: number;
+  raw_columns: number;
+  cleaned_columns: number;
+  columns_dropped: number;
+  dropped_column_names: string[];
+  redundant_columns_removed: string[];
+  collinear_features_pruned: string[];
+  type_coercions: string[];
+  missing_values_imputed: number;
+  whitespace_and_case_normalized: number;
+  outliers_winsorized: number;
+  integrity_before: number;
+  integrity_after: number;
+  actions: CleansingAction[];
+}
+
+export interface ClusterProfile {
+  cluster_id: number;
+  label: string;
+  size: number;
+  share_pct: number;
+  centroid_summary: Record<string, number>;
+}
+
+export interface FeatureImportanceItem {
+  feature: string;
+  importance_pct: number;
+  direction: string;
+}
+
+export interface DataScienceSummary {
+  target_metric?: string | null;
+  model_type: string;
+  r2_score?: number | null;
+  rmse?: number | null;
+  optimal_clusters: number;
+  silhouette_score?: number | null;
+  pca_variance_explained_pct: number[];
+  top_feature_importances: FeatureImportanceItem[];
+  clusters: ClusterProfile[];
+  ai_data_science_verdict: string;
+  models_participated: string[];
+}
+
+export interface DatasetVerificationCheck {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
+export interface DatasetVerificationResult {
+  status: "perfect" | "good_with_warnings" | "unusable";
+  is_good_dataset: boolean;
+  readiness_score: number;
+  summary: string;
+  row_count: number;
+  column_count: number;
+  cleaned_row_count: number;
+  cleaned_column_count: number;
+  completeness_pct: number;
+  duplicate_rows: number;
+  numeric_metrics: string[];
+  categorical_dimensions: string[];
+  temporal_dimensions: string[];
+  excluded_id_columns: string[];
+  checks: DatasetVerificationCheck[];
+  warnings: string[];
+  blocking_issues: string[];
+}
+
+export interface AlignedMetricSpec {
+  metric_name: string;
+  role: "North Star" | "Guardrail" | "Driver" | "Segment Dimension";
+  aggregation: string;
+  stakeholder_alignment: string;
+}
+
+export interface StakeholderAlignment {
+  stakeholder_role: string;
+  primary_concern: string;
+  target_metrics: string[];
+}
+
+export interface ProblemDefinitionResult {
+  core_question: string;
+  business_goal: string;
+  decision_needed: string;
+  stakeholders: StakeholderAlignment[];
+  aligned_metrics: AlignedMetricSpec[];
+  clarifying_questions: string[];
+  recommended_analysis_prompt: string;
+  static_signals?: string[];
+  synthesis_mode?: string;
+  ai_provider_used: string;
+}
+
+export interface DatasetIntakeResponse {
+  dataset_name: string;
+  verification: DatasetVerificationResult;
+  problem_definition?: ProblemDefinitionResult | null;
+}
+
 export interface DashboardPlan {
   title: string;
   summary: string;
@@ -222,4 +336,9 @@ export interface DashboardPlan {
   refinement_iterations_run?: number;
   refinement_history?: RefinementIterationRecord[];
   powerbi_pages?: PowerBiPageBlueprint[];
+  cleansing_report?: DataCleansingReport | null;
+  data_science_summary?: DataScienceSummary | null;
+  models_used?: string[];
+  dataset_verification?: DatasetVerificationResult | null;
+  problem_definition?: ProblemDefinitionResult | null;
 }

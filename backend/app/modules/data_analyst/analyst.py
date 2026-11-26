@@ -1,13 +1,31 @@
 # backend/app/modules/data_analyst/analyst.py
+import asyncio
 import io
 import logging
-from typing import Dict, Any, List, Optional, Set, AsyncGenerator, cast
+from typing import Dict, Any, List, Optional, Set, Tuple, AsyncGenerator, cast
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from app.core.config import settings
 from app.core.sse import sse_event
-from app.services.llm.instructor_client import generate_structured
+from app.services.llm.instructor_client import (
+    format_provider_model_label,
+    generate_structured,
+    get_configured_providers,
+    get_last_provider_used,
+    is_provider_on_cooldown,
+    normalize_provider_name,
+)
+from app.modules.data_analyst.data_cleaner import (
+    clean_and_deduplicate_dataset,
+    run_dynamic_data_science_pipeline,
+)
+from app.modules.data_analyst.problem_definer import (
+    build_static_problem_definition,
+    define_problem_and_align_metrics,
+    verify_dataset_readiness,
+)
 from app.modules.data_analyst.profiler import (
     build_expert_statistical_diagnostics,
     classify_dataframe_roles,
@@ -35,6 +53,10 @@ from app.modules.data_analyst.schemas import (
     ExecutiveDossier,
     DashboardPlan,
     LLMDashboardDraft,
+    DataCleansingReport,
+    DataScienceSummary,
+    LLMDataScienceSynthesis,
+    ProblemDefinitionResult,
 )
 from app.modules.data_analyst.prompts import (
     DASHBOARD_PLANNER_SYSTEM_PROMPT,
@@ -381,7 +403,8 @@ def profile_dataset(
     to identify genuine multidimensional outliers.
     """
     if df is None:
-        df = pd.read_csv(io.StringIO(csv_text))
+        raw_df = pd.read_csv(io.StringIO(csv_text))
+        df, _ = clean_and_deduplicate_dataset(raw_df)
     row_count, col_count = df.shape
     resolved_roles = roles if roles is not None else classify_dataframe_roles(df)
 
@@ -519,11 +542,22 @@ def _build_deep_stats_brief(
     diagnostics: List[StatisticalDiagnostic],
     correlations: List[Any],
     segment_benchmarks: List[Any],
+    cleansing_report: Optional[DataCleansingReport] = None,
+    ds_brief: str = "",
 ) -> str:
     lines: List[str] = [
         f"Data Quality: {quality_audit.total_rows:,} rows x {quality_audit.total_columns} cols, "
         f"Completeness={quality_audit.completeness_pct:.1f}%, Duplicates={quality_audit.duplicate_rows:,} ({quality_audit.duplicate_pct:.1f}%)."
     ]
+    if cleansing_report is not None:
+        lines.append(
+            f"Automated Cleansing & Redundancy Removal: {cleansing_report.raw_rows:,} -> {cleansing_report.cleaned_rows:,} rows "
+            f"(removed {cleansing_report.duplicates_removed:,} duplicates), {cleansing_report.raw_columns} -> {cleansing_report.cleaned_columns} cols "
+            f"(dropped={cleansing_report.dropped_column_names or ['None']}, collinear_ml_pruned={cleansing_report.collinear_features_pruned or ['None']}, "
+            f"imputed={cleansing_report.missing_values_imputed:,}, integrity {cleansing_report.integrity_before}% -> {cleansing_report.integrity_after}%)."
+        )
+    if ds_brief:
+        lines.append(ds_brief)
     if quality_audit.excluded_id_columns:
         lines.append(f"Excluded Identifier Columns (DO NOT aggregate or chart): {', '.join(quality_audit.excluded_id_columns)}")
     if quality_audit.temporal_columns:
@@ -933,6 +967,87 @@ from app.modules.data_analyst.refiner import (
 )
 
 
+async def call_groq_data_science_analyst(
+    *,
+    dataset_name: str,
+    user_prompt: str,
+    schema_summary: str,
+    cleansing_report: DataCleansingReport,
+    ds_brief: str,
+    deep_stats_summary: str,
+    provider: Optional[str] = None,
+) -> Optional[LLMDataScienceSynthesis]:
+    """
+    Invokes a quantitative reasoning model (Groq, NVIDIA NIM, or Gemini) to audit the automated
+    cleansing, redundancy pruning, K-Means clustering, PCA, and RandomForest driver model.
+    """
+    configured = get_configured_providers()
+    if not configured:
+        return None
+    if provider:
+        ds_provider = provider
+    elif "groq" in configured and not is_provider_on_cooldown("groq"):
+        ds_provider = "groq"
+    else:
+        ds_provider = configured[0]
+
+    sys_prompt = (
+        "You are a Lead Applied Data Scientist & ML Engineer. "
+        "Audit the dataset cleansing, redundancy removal, PCA, K-Means clusters, and RandomForest feature importances. "
+        "Return a valid JSON object matching LLMDataScienceSynthesis."
+    )
+    user_msg = (
+        f"Dataset: {dataset_name}\n"
+        f"Mandate: {user_prompt}\n\n"
+        f"Cleansing Report:\n"
+        f"- Rows: {cleansing_report.raw_rows} -> {cleansing_report.cleaned_rows} (duplicates_removed={cleansing_report.duplicates_removed})\n"
+        f"- Columns: {cleansing_report.raw_columns} -> {cleansing_report.cleaned_columns} (dropped={cleansing_report.dropped_column_names})\n"
+        f"- Collinear ML Features Pruned: {cleansing_report.collinear_features_pruned}\n"
+        f"- Missing Values Imputed: {cleansing_report.missing_values_imputed}\n"
+        f"- Integrity Uplift: {cleansing_report.integrity_before}% -> {cleansing_report.integrity_after}%\n\n"
+        f"Data Science Pipeline Outputs:\n{ds_brief}\n\n"
+        f"Schema:\n{schema_summary[:2500]}\n\n"
+        f"Statistical Brief:\n{deep_stats_summary[:2500]}"
+    )
+    try:
+        return await generate_structured(
+            response_model=LLMDataScienceSynthesis,
+            system_prompt=sys_prompt,
+            user_prompt=user_msg,
+            provider=ds_provider,
+            max_retries=2,
+            temperature=0.15,
+            max_tokens=2048,
+        )
+    except Exception as exc:
+        logger.warning(f"Groq data science synthesis failed: {exc}")
+        return None
+
+
+def _format_problem_definition_for_prompt(problem: Optional[ProblemDefinitionResult]) -> str:
+    if not problem:
+        return ""
+    lines = [
+        f"Synthesis Mode: {problem.synthesis_mode} ({problem.ai_provider_used})",
+        f"Core Question: {problem.core_question}",
+        f"Business Goal: {problem.business_goal}",
+        f"Decision Needed: {problem.decision_needed}",
+    ]
+    if problem.static_signals:
+        lines.append("Static Code Empirical Signals:")
+        for sig in problem.static_signals[:5]:
+            lines.append(f"  - {sig}")
+    if problem.aligned_metrics:
+        lines.append("Aligned Stakeholder Metrics:")
+        for m in problem.aligned_metrics[:6]:
+            lines.append(f"  - {m.metric_name} [{m.role} | {m.aggregation}]: {m.stakeholder_alignment}")
+    if problem.stakeholders:
+        lines.append("Stakeholders:")
+        for st in problem.stakeholders[:4]:
+            lines.append(f"  - {st.stakeholder_role} ({', '.join(st.target_metrics)}): {st.primary_concern}")
+    return "\n".join(lines)
+
+
 async def call_llm_dashboard_planner(
     schema_summary: str,
     row_count: int,
@@ -941,6 +1056,8 @@ async def call_llm_dashboard_planner(
     ground_truth_summary: str = "",
     target_focus: str = "",
     deep_stats_summary: str = "",
+    problem_definition_summary: str = "",
+    provider: Optional[str] = "gemini",
 ) -> Optional[DashboardPlan]:
     """
     Invokes Instructor (wrapping Google Gemini / Groq Cloud) with maximum output
@@ -954,12 +1071,14 @@ async def call_llm_dashboard_planner(
         ground_truth_summary=ground_truth_summary,
         target_focus=target_focus,
         deep_stats_summary=deep_stats_summary,
+        problem_definition_summary=problem_definition_summary,
     )
     try:
         result = await generate_structured(
             response_model=LLMDashboardDraft,
             system_prompt=DASHBOARD_PLANNER_SYSTEM_PROMPT,
             user_prompt=user_content,
+            provider=provider,
             max_retries=3,
             temperature=0.2,
             max_tokens=DEEP_PLANNER_MAX_TOKENS,
@@ -1007,7 +1126,27 @@ def generate_dossier_markdown(plan: DashboardPlan) -> str:
 
 ### 1. EXECUTIVE VERDICT
 > **Boardroom Takeaway:** {dossier.executive_verdict}
+"""
+    if plan.problem_definition:
+        pd_def = plan.problem_definition
+        md += f"""
+---
 
+### 1A. PROBLEM DEFINITION & STAKEHOLDER ALIGNMENT ({pd_def.ai_provider_used})
+* **Core Question:** {pd_def.core_question}
+* **Business Goal:** {pd_def.business_goal}
+* **Decision Needed:** {pd_def.decision_needed}
+"""
+        if pd_def.static_signals:
+            md += "* **Static Code Empirical Signals:**\n"
+            for sig in pd_def.static_signals:
+                md += f"  - {sig}\n"
+        if pd_def.aligned_metrics:
+            md += "\n| Metric | Role | Safe Aggregation | Stakeholder Alignment |\n| :--- | :--- | :--- | :--- |\n"
+            for am in pd_def.aligned_metrics:
+                md += f"| **{am.metric_name}** | `{am.role}` | `{am.aggregation}` | {am.stakeholder_alignment} |\n"
+
+    md += f"""
 ---
 
 ### 2. SITUATION - COMPLICATION - RESOLUTION (SCR) ANALYSIS
@@ -1163,6 +1302,31 @@ def generate_dossier_markdown(plan: DashboardPlan) -> str:
             for t in plan.tableau_calculated_fields:
                 md += f"- **{t.get('caption', 'Calculation')}**: `{t.get('formula', '')}`\n"
 
+    if plan.cleansing_report:
+        cr = plan.cleansing_report
+        md += f"""
+---
+
+### 14A. AUTOMATED DATA CLEANSING & REDUNDANCY REMOVAL
+* **Row Hygiene:** `{cr.raw_rows:,}` raw → `{cr.cleaned_rows:,}` cleansed (`{cr.duplicates_removed:,}` duplicate rows removed)
+* **Column Hygiene:** `{cr.raw_columns}` raw → `{cr.cleaned_columns}` active (`{cr.columns_dropped}` dropped: `{', '.join(cr.dropped_column_names) if cr.dropped_column_names else 'None'}`)
+* **Collinear Features Pruned (ML):** `{', '.join(cr.collinear_features_pruned) if cr.collinear_features_pruned else 'None'}`
+* **Missing Values Imputed:** `{cr.missing_values_imputed:,}` | **String/Case Normalizations:** `{cr.whitespace_and_case_normalized:,}` | **Integrity Uplift:** `{cr.integrity_before:.1f}% → {cr.integrity_after:.1f}%`
+"""
+
+    if plan.data_science_summary:
+        ds = plan.data_science_summary
+        md += f"""
+---
+
+### 14B. DYNAMIC DATA SCIENCE & DUAL-MODEL AI SYNTHESIS
+* **Pipeline:** `{ds.model_type}` | **Target Metric:** `{ds.target_metric or 'N/A'}`
+* **Models Orchestrated:** `{', '.join(plan.models_used or ds.models_participated) or 'Deterministic + Heuristic'}`
+* **Fit & Clustering:** `R²={ds.r2_score if ds.r2_score is not None else 'N/A'}`, `RMSE={ds.rmse if ds.rmse is not None else 'N/A'}`, `K-Means k={ds.optimal_clusters}` (`silhouette={ds.silhouette_score if ds.silhouette_score is not None else 'N/A'}`)
+"""
+        if ds.ai_data_science_verdict:
+            md += f"* **Dual-AI Data Science Verdict:** {ds.ai_data_science_verdict}\n"
+
     if plan.refinement_history:
         md += f"""
 ---
@@ -1251,25 +1415,23 @@ def _assemble_expert_plan(
     return plan
 
 
-async def generate_complete_dashboard(
+def _prepare_cleansed_data_science_context(
     csv_text: str,
     user_prompt: str,
     dataset_name: str = "dataset.csv",
-    refinement_iterations: int = DEFAULT_REFINEMENT_ITERATIONS,
-    target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
-) -> DashboardPlan:
-    """
-    Master Principal Data Analyst Pipeline (N-Iteration Self-Refining & Data-Shape-Driven):
-    1. Ingests & classifies semantic column roles + runs IsolationForest over non-ID numeric features.
-    2. Resolves target metrics, dimensions, and analytical intent from user prompt.
-    3. Computes quantiles, correlations, ANOVA segment benchmarks, HHI, and data quality audit.
-    4. Invokes Gemini / Groq LLM planner via Instructor at max output tokens (16K).
-    5. Runs N iterations of adversarial Principal Peer Review + max-token refinement until Expert Certified.
-    6. Enriches enterprise Power BI DAX folders, typed Power Query M, and 3-page PBIP layout blueprint.
-    """
-    raw_df = pd.read_csv(io.StringIO(csv_text))
-    roles = classify_dataframe_roles(raw_df)
-    df, profile, anomalies = profile_dataset(csv_text, roles=roles, df=raw_df)
+) -> Dict[str, Any]:
+    """Shared deterministic verification, ingestion, cleansing, problem definition, EDA, and ML pipeline."""
+    verification, verified_df, verified_cleansing, verified_roles = verify_dataset_readiness(
+        csv_text, dataset_name=dataset_name
+    )
+    if not verification.is_good_dataset or verified_df is None or verified_cleansing is None or verified_roles is None:
+        raise ValueError(
+            "; ".join(verification.blocking_issues) or verification.summary
+        )
+    df = verified_df
+    cleansing_report = verified_cleansing
+    roles = verified_roles
+    _, profile, anomalies = profile_dataset(csv_text, roles=roles, df=df)
     target_numerics, target_cats, intent = resolve_prompt_intent_and_columns(df, user_prompt, roles=roles)
 
     diagnostics = build_expert_statistical_diagnostics(df, target_numerics, roles)
@@ -1278,7 +1440,32 @@ async def generate_complete_dashboard(
     quality_audit = compute_data_quality_audit(df, roles)
     correlations, correlation_matrix = compute_correlations_and_matrix(df, target_numerics, roles)
     segment_benchmarks = compute_segment_benchmarks(df, target_cats, target_numerics, roles)
-    deep_stats_summary = _build_deep_stats_brief(quality_audit, diagnostics, correlations, segment_benchmarks)
+    problem_definition = build_static_problem_definition(
+        df=df,
+        roles=roles,
+        verification=verification,
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=diagnostics,
+        correlations=correlations,
+        segment_benchmarks=segment_benchmarks,
+        concentration=concentration,
+    )
+
+    ds_summary, ds_brief = run_dynamic_data_science_pipeline(
+        df=df,
+        roles=roles,
+        target_numerics=target_numerics,
+        collinear_pruned=cleansing_report.collinear_features_pruned,
+    )
+    deep_stats_summary = _build_deep_stats_brief(
+        quality_audit,
+        diagnostics,
+        correlations,
+        segment_benchmarks,
+        cleansing_report=cleansing_report,
+        ds_brief=ds_brief,
+    )
 
     target_focus = (
         f"Primary Target Metrics: {', '.join(target_numerics[:3])}\n"
@@ -1295,34 +1482,192 @@ async def generate_complete_dashboard(
         schema_lines.append(f"- {col.name} ({stat_summary}, sample={col.sample_values[:3]})")
     schema_summary = "\n".join(schema_lines)
 
-    llm_plan = await call_llm_dashboard_planner(
-        schema_summary=schema_summary,
-        row_count=profile.row_count,
+    return {
+        "df": df,
+        "cleansing_report": cleansing_report,
+        "roles": roles,
+        "profile": profile,
+        "anomalies": anomalies,
+        "target_numerics": target_numerics,
+        "target_cats": target_cats,
+        "intent": intent,
+        "diagnostics": diagnostics,
+        "concentration": concentration,
+        "ground_truth_dict": ground_truth_dict,
+        "ground_truth_summary": ground_truth_summary,
+        "quality_audit": quality_audit,
+        "correlations": correlations,
+        "correlation_matrix": correlation_matrix,
+        "segment_benchmarks": segment_benchmarks,
+        "ds_summary": ds_summary,
+        "ds_brief": ds_brief,
+        "deep_stats_summary": deep_stats_summary,
+        "target_focus": target_focus,
+        "schema_summary": schema_summary,
+        "dataset_verification": verification,
+        "problem_definition": problem_definition,
+    }
+
+
+def _choose_planning_providers() -> Tuple[str, str]:
+    """
+    Select distinct healthy providers for (ds_provider, planner_provider) when >=2 providers
+    are configured so NVIDIA NIM, Groq, and Gemini collaborate without colliding on the same RPM bucket.
+    """
+    configured = get_configured_providers()
+    healthy = [p for p in configured if not is_provider_on_cooldown(p)]
+    pool = healthy or configured
+
+    preferred = normalize_provider_name(settings.LLM_PROVIDER)
+    if preferred in pool:
+        planner_provider = preferred
+    elif "gemini" in pool:
+        planner_provider = "gemini"
+    elif "nvidia" in pool:
+        planner_provider = "nvidia"
+    elif pool:
+        planner_provider = pool[0]
+    else:
+        planner_provider = "gemini"
+
+    # Pick a different healthy provider for the Data Science Audit when available
+    ds_candidates = [p for p in ("groq", "nvidia", "gemini") if p in pool and p != planner_provider]
+    if ds_candidates:
+        ds_provider = ds_candidates[0]
+    elif "groq" in pool:
+        ds_provider = "groq"
+    elif pool:
+        ds_provider = pool[0]
+    else:
+        ds_provider = "groq"
+
+    return ds_provider, planner_provider
+
+
+async def _run_dual_model_planning(
+    ctx: Dict[str, Any],
+    *,
+    user_prompt: str,
+    dataset_name: str,
+) -> tuple[Optional[DashboardPlan], DataScienceSummary, List[str]]:
+    """
+    Collaboratively executes Data Science & Cleansing Audit and Executive BI Planning
+    across configured AI providers (NVIDIA NIM, Groq, Gemini) with rate-limit-aware pacing
+    and automatic failover.
+    """
+    ds_summary: DataScienceSummary = ctx["ds_summary"]
+    cleansing_report: DataCleansingReport = ctx["cleansing_report"]
+
+    ds_provider, planner_provider = _choose_planning_providers()
+
+    async def _run_ds() -> tuple[Optional[LLMDataScienceSynthesis], Optional[str]]:
+        res = await call_groq_data_science_analyst(
+            dataset_name=dataset_name,
+            user_prompt=user_prompt,
+            schema_summary=ctx["schema_summary"],
+            cleansing_report=cleansing_report,
+            ds_brief=ctx["ds_brief"],
+            deep_stats_summary=ctx["deep_stats_summary"],
+            provider=ds_provider,
+        )
+        return res, (get_last_provider_used() or ds_provider)
+
+    async def _run_planner() -> tuple[Optional[DashboardPlan], Optional[str]]:
+        res = await call_llm_dashboard_planner(
+            schema_summary=ctx["schema_summary"],
+            row_count=ctx["profile"].row_count,
+            user_prompt=user_prompt,
+            dataset_name=dataset_name,
+            ground_truth_summary=ctx["ground_truth_summary"],
+            target_focus=ctx["target_focus"],
+            deep_stats_summary=ctx["deep_stats_summary"],
+            problem_definition_summary=_format_problem_definition_for_prompt(ctx.get("problem_definition")),
+            provider=planner_provider,
+        )
+        return res, (get_last_provider_used() or planner_provider)
+
+    # Run in parallel when distinct providers handle each role; run sequentially if sharing one provider to avoid burst 429s
+    if ds_provider != planner_provider:
+        (groq_ds, actual_ds_provider), (llm_plan, actual_planner_provider) = await asyncio.gather(
+            _run_ds(), _run_planner()
+        )
+    else:
+        llm_plan, actual_planner_provider = await _run_planner()
+        groq_ds, actual_ds_provider = await _run_ds()
+
+    models_used: List[str] = []
+    if groq_ds is not None:
+        ds_label = format_provider_model_label(actual_ds_provider or ds_provider)
+        if ds_label not in models_used:
+            models_used.append(ds_label)
+        ds_summary.ai_data_science_verdict = (
+            f"{groq_ds.cleansing_assessment} {groq_ds.predictive_driver_takeaway}"
+        ).strip()
+        if llm_plan is not None and llm_plan.dossier is not None:
+            for rec in groq_ds.feature_engineering_recommendations[:2]:
+                if rec not in llm_plan.dossier.methodological_notes:
+                    llm_plan.dossier.methodological_notes.append(f"[DS Audit] {rec}")
+    if llm_plan is not None:
+        planner_label = format_provider_model_label(actual_planner_provider or planner_provider)
+        if planner_label not in models_used:
+            models_used.append(planner_label)
+    ds_summary.models_participated = list(models_used)
+    return llm_plan, ds_summary, models_used
+
+
+async def generate_complete_dashboard(
+    csv_text: str,
+    user_prompt: str,
+    dataset_name: str = "dataset.csv",
+    refinement_iterations: int = DEFAULT_REFINEMENT_ITERATIONS,
+    target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
+) -> DashboardPlan:
+    """
+    Master Principal Data Analyst Pipeline (Cleansing + Dynamic ML + Dual Gemini/Groq AI):
+    1. Cleanses & deduplicates raw dataset (whitespace, types, constant/mirror columns, imputation).
+    2. Classifies semantic roles, runs IsolationForest, PCA, Silhouette K-Means, and RandomForest drivers.
+    3. Invokes BOTH Groq (Data Science Audit) and Gemini (Executive BI Planner).
+    4. Runs N iterations of dual-model Principal Peer Review & refinement until Expert Certified.
+    5. Enriches enterprise Power BI DAX folders, typed Power Query M, and 3-page PBIP layout blueprint.
+    """
+    ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt, dataset_name=dataset_name)
+    ctx["problem_definition"] = await define_problem_and_align_metrics(
+        df=ctx["df"],
+        roles=ctx["roles"],
+        verification=ctx["dataset_verification"],
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=ctx["diagnostics"],
+        correlations=ctx["correlations"],
+        segment_benchmarks=ctx["segment_benchmarks"],
+        concentration=ctx["concentration"],
+        static_problem=ctx["problem_definition"],
+        generate_fn=generate_structured,
+    )
+    llm_plan, ds_summary, models_used = await _run_dual_model_planning(
+        ctx,
         user_prompt=user_prompt,
         dataset_name=dataset_name,
-        ground_truth_summary=ground_truth_summary,
-        target_focus=target_focus,
-        deep_stats_summary=deep_stats_summary,
     )
 
     def _assemble(candidate: Optional[DashboardPlan]) -> DashboardPlan:
         return _assemble_expert_plan(
-            df=df,
-            profile=profile,
-            anomalies=anomalies,
-            roles=roles,
-            target_numerics=target_numerics,
-            target_cats=target_cats,
-            intent=intent,
+            df=ctx["df"],
+            profile=ctx["profile"],
+            anomalies=ctx["anomalies"],
+            roles=ctx["roles"],
+            target_numerics=ctx["target_numerics"],
+            target_cats=ctx["target_cats"],
+            intent=ctx["intent"],
             user_prompt=user_prompt,
             dataset_name=dataset_name,
-            diagnostics=diagnostics,
-            concentration=concentration,
-            ground_truth_dict=ground_truth_dict,
-            quality_audit=quality_audit,
-            correlations=correlations,
-            correlation_matrix=correlation_matrix,
-            segment_benchmarks=segment_benchmarks,
+            diagnostics=ctx["diagnostics"],
+            concentration=ctx["concentration"],
+            ground_truth_dict=ctx["ground_truth_dict"],
+            quality_audit=ctx["quality_audit"],
+            correlations=ctx["correlations"],
+            correlation_matrix=ctx["correlation_matrix"],
+            segment_benchmarks=ctx["segment_benchmarks"],
             llm_plan=candidate,
         )
 
@@ -1330,22 +1675,29 @@ async def generate_complete_dashboard(
     final_plan = assembled
     async for evt_type, payload in run_iterative_refinement_stream(
         assembled,
-        df=df,
-        roles=roles,
-        target_numerics=target_numerics,
-        target_cats=target_cats,
+        df=ctx["df"],
+        roles=ctx["roles"],
+        target_numerics=ctx["target_numerics"],
+        target_cats=ctx["target_cats"],
         dataset_name=dataset_name,
         user_prompt=user_prompt,
-        schema_summary=schema_summary,
-        ground_truth_summary=ground_truth_summary,
-        deep_stats_summary=deep_stats_summary,
+        schema_summary=ctx["schema_summary"],
+        ground_truth_summary=ctx["ground_truth_summary"],
+        deep_stats_summary=ctx["deep_stats_summary"],
         assemble_fn=_assemble,
         max_iterations=refinement_iterations,
         target_quality_score=target_quality_score,
         enable_llm_refinement=(llm_plan is not None),
+        participating_models=models_used,
     ):
         if evt_type == "done":
             final_plan = payload
+    ds_summary.models_participated = list(models_used)
+    final_plan.cleansing_report = ctx["cleansing_report"]
+    final_plan.data_science_summary = ds_summary
+    final_plan.models_used = models_used
+    final_plan.dataset_verification = ctx["dataset_verification"]
+    final_plan.problem_definition = ctx["problem_definition"]
     return final_plan
 
 
@@ -1357,91 +1709,90 @@ async def generate_complete_dashboard_stream(
     target_quality_score: float = DEFAULT_TARGET_QUALITY_SCORE,
 ) -> AsyncGenerator[str, None]:
     """
-    SSE Telemetry Stream for the N-Iteration Principal Data Analyst & Executive Power BI Studio.
+    SSE Telemetry Stream for Cleansing, Dynamic Data Science, Dual Gemini+Groq Synthesis, and Power BI Studio.
     """
     n_iters = max(1, min(8, int(refinement_iterations or DEFAULT_REFINEMENT_ITERATIONS)))
 
     yield sse_event("status", {
         "step": 1,
         "stage": "profiling",
-        "message": f"Phase 1/6: Classifying column semantic roles and profiling '{dataset_name}'..."
+        "message": f"Phase 1/6: Verifying dataset readiness, cleansing & defining problem metrics for '{dataset_name}'..."
     })
 
-    raw_df = pd.read_csv(io.StringIO(csv_text))
-    roles = classify_dataframe_roles(raw_df)
-    df, profile, anomalies = profile_dataset(csv_text, roles=roles, df=raw_df)
-    target_numerics, target_cats, intent = resolve_prompt_intent_and_columns(df, user_prompt, roles=roles)
+    try:
+        ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt, dataset_name=dataset_name)
+    except ValueError as verify_err:
+        yield sse_event("error", {"detail": str(verify_err)})
+        return
+    cr: DataCleansingReport = ctx["cleansing_report"]
+    ds: DataScienceSummary = ctx["ds_summary"]
 
     yield sse_event("status", {
         "step": 2,
         "stage": "anomaly_detection",
-        "message": f"Phase 2/6: IsolationForest flagged {len(anomalies)} multivariate outliers on non-ID features (Integrity: {profile.data_integrity_score}%)..."
+        "message": (
+            f"Phase 2/6: Cleansed {cr.raw_rows}->{cr.cleaned_rows} rows ({cr.duplicates_removed} dups removed, "
+            f"{cr.columns_dropped} redundant cols dropped, {cr.missing_values_imputed} imputed); "
+            f"IsolationForest flagged {len(ctx['anomalies'])} outliers..."
+        ),
     })
 
-    diagnostics = build_expert_statistical_diagnostics(df, target_numerics, roles)
-    concentration = calculate_concentration_analysis(df, target_cats, target_numerics)
-    ground_truth_dict, ground_truth_summary = compute_ground_truth_context(df, target_numerics, target_cats, roles=roles)
-    quality_audit = compute_data_quality_audit(df, roles)
-    correlations, correlation_matrix = compute_correlations_and_matrix(df, target_numerics, roles)
-    segment_benchmarks = compute_segment_benchmarks(df, target_cats, target_numerics, roles)
-    deep_stats_summary = _build_deep_stats_brief(quality_audit, diagnostics, correlations, segment_benchmarks)
-
-    primary_targets = ", ".join(target_numerics[:2]) if target_numerics else "All Metrics"
+    primary_targets = ", ".join(ctx["target_numerics"][:2]) if ctx["target_numerics"] else "All Metrics"
     yield sse_event("status", {
         "step": 3,
         "stage": "intent_resolution",
-        "message": f"Phase 3/6: Computed quantiles, Pearson/Spearman correlations & ANOVA drivers on [{primary_targets}]..."
+        "message": (
+            f"Phase 3/6: Executed {ds.model_type} (k={ds.optimal_clusters}, R²={ds.r2_score}) "
+            f"& ANOVA drivers on [{primary_targets}]..."
+        ),
     })
 
-    target_focus = (
-        f"Primary Target Metrics: {', '.join(target_numerics[:3])}\n"
-        f"Target Categorical Dimensions: {', '.join(target_cats[:2])}\n"
-        f"Analytical Intent: {intent}"
-    )
-
-    schema_lines = []
-    for col in profile.columns:
-        c_role = roles.get(col.name, {}).get("role", col.dtype)
-        stat_summary = f"role={c_role}, dtype={col.dtype}, unique={col.unique_count}, nulls={col.null_count}"
-        if col.min_val is not None:
-            stat_summary += f", min={col.min_val}, max={col.max_val}, mean={col.mean_val}, skew={col.skewness}, cv={col.cv}"
-        schema_lines.append(f"- {col.name} ({stat_summary}, sample={col.sample_values[:3]})")
-    schema_summary = "\n".join(schema_lines)
-
+    active_providers = get_configured_providers()
+    providers_label = " + ".join(p.upper() for p in active_providers) if active_providers else "Multi-AI"
     yield sse_event("status", {
         "step": 4,
         "stage": "llm_synthesis",
-        "message": f"Phase 4/6: Synthesizing initial max-token (16K) Principal Analyst draft & Power BI DAX library..."
+        "message": f"Phase 4/6: Refining problem definition (Static Code + AI) & running Multi-AI synthesis ({providers_label})...",
     })
 
-    llm_plan = await call_llm_dashboard_planner(
-        schema_summary=schema_summary,
-        row_count=profile.row_count,
+    ctx["problem_definition"] = await define_problem_and_align_metrics(
+        df=ctx["df"],
+        roles=ctx["roles"],
+        verification=ctx["dataset_verification"],
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+        diagnostics=ctx["diagnostics"],
+        correlations=ctx["correlations"],
+        segment_benchmarks=ctx["segment_benchmarks"],
+        concentration=ctx["concentration"],
+        static_problem=ctx["problem_definition"],
+        generate_fn=generate_structured,
+    )
+
+    llm_plan, ds_summary, models_used = await _run_dual_model_planning(
+        ctx,
         user_prompt=user_prompt,
         dataset_name=dataset_name,
-        ground_truth_summary=ground_truth_summary,
-        target_focus=target_focus,
-        deep_stats_summary=deep_stats_summary,
     )
 
     def _assemble(candidate: Optional[DashboardPlan]) -> DashboardPlan:
         return _assemble_expert_plan(
-            df=df,
-            profile=profile,
-            anomalies=anomalies,
-            roles=roles,
-            target_numerics=target_numerics,
-            target_cats=target_cats,
-            intent=intent,
+            df=ctx["df"],
+            profile=ctx["profile"],
+            anomalies=ctx["anomalies"],
+            roles=ctx["roles"],
+            target_numerics=ctx["target_numerics"],
+            target_cats=ctx["target_cats"],
+            intent=ctx["intent"],
             user_prompt=user_prompt,
             dataset_name=dataset_name,
-            diagnostics=diagnostics,
-            concentration=concentration,
-            ground_truth_dict=ground_truth_dict,
-            quality_audit=quality_audit,
-            correlations=correlations,
-            correlation_matrix=correlation_matrix,
-            segment_benchmarks=segment_benchmarks,
+            diagnostics=ctx["diagnostics"],
+            concentration=ctx["concentration"],
+            ground_truth_dict=ctx["ground_truth_dict"],
+            quality_audit=ctx["quality_audit"],
+            correlations=ctx["correlations"],
+            correlation_matrix=ctx["correlation_matrix"],
+            segment_benchmarks=ctx["segment_benchmarks"],
             llm_plan=candidate,
         )
 
@@ -1450,30 +1801,38 @@ async def generate_complete_dashboard_stream(
     yield sse_event("status", {
         "step": 5,
         "stage": "iterative_refinement",
-        "message": f"Phase 5/6: Launching up to {n_iters} Principal Peer-Review & max-token refinement passes (Target >= {target_quality_score:.0f}/100)..."
+        "message": f"Phase 5/6: Launching up to {n_iters} Dual-Model Peer-Review & refinement passes (Target >= {target_quality_score:.0f}/100)..."
     })
 
     final_plan = assembled
     async for evt_type, payload in run_iterative_refinement_stream(
         assembled,
-        df=df,
-        roles=roles,
-        target_numerics=target_numerics,
-        target_cats=target_cats,
+        df=ctx["df"],
+        roles=ctx["roles"],
+        target_numerics=ctx["target_numerics"],
+        target_cats=ctx["target_cats"],
         dataset_name=dataset_name,
         user_prompt=user_prompt,
-        schema_summary=schema_summary,
-        ground_truth_summary=ground_truth_summary,
-        deep_stats_summary=deep_stats_summary,
+        schema_summary=ctx["schema_summary"],
+        ground_truth_summary=ctx["ground_truth_summary"],
+        deep_stats_summary=ctx["deep_stats_summary"],
         assemble_fn=_assemble,
         max_iterations=n_iters,
         target_quality_score=target_quality_score,
         enable_llm_refinement=(llm_plan is not None),
+        participating_models=models_used,
     ):
         if evt_type == "status":
             yield sse_event("status", {"step": 5, **payload})
         elif evt_type == "done":
             final_plan = payload
+
+    ds_summary.models_participated = list(models_used)
+    final_plan.cleansing_report = ctx["cleansing_report"]
+    final_plan.data_science_summary = ds_summary
+    final_plan.models_used = models_used
+    final_plan.dataset_verification = ctx["dataset_verification"]
+    final_plan.problem_definition = ctx["problem_definition"]
 
     yield sse_event("status", {
         "step": 6,

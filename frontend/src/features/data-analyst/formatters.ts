@@ -1,5 +1,10 @@
 // frontend/src/features/data-analyst/formatters.ts
-import type { DashboardPlan } from "./types";
+import type {
+  AlignedMetricSpec,
+  DashboardPlan,
+  DatasetIntakeResponse,
+  DatasetVerificationCheck,
+} from "./types";
 
 const ID_HEADER_RE =
   /^(?:unnamed:\s*0|index|id|uuid|guid|isbn(?:10|13)?|book_?id|user_?id|customer_?id|client_?id|order_?id|product_?id|account_?id|transaction_?id|txn_?id|record_?id|row_?id)$|_(?:id|uuid|guid|isbn|sku|ssn)$/i;
@@ -196,4 +201,204 @@ export function buildClientDossierMarkdown(plan: DashboardPlan): string {
   }
 
   return lines.join("\n");
+}
+
+export function buildOfflineDatasetIntake(
+  csvContent: string,
+  datasetName: string,
+  userGoal = ""
+): DatasetIntakeResponse {
+  const meta = inspectCsvMetadata(csvContent);
+  const checks: DatasetVerificationCheck[] = [];
+  const warnings: string[] = [];
+  const blocking_issues: string[] = [];
+  let score = 100;
+
+  if (meta.approxRows < 3) {
+    const msg = `Only ${meta.approxRows} data row(s) detected; at least 3 rows are required for statistical analysis.`;
+    checks.push({ name: "Sample Size Sufficiency", status: "fail", detail: msg });
+    blocking_issues.push(msg);
+    score -= 45;
+  } else if (meta.approxRows < 10) {
+    const msg = `${meta.approxRows} rows detected (below 10-row benchmark); trends will be directional.`;
+    checks.push({ name: "Sample Size Sufficiency", status: "warn", detail: msg });
+    warnings.push(msg);
+    score -= 6;
+  } else {
+    checks.push({
+      name: "Sample Size Sufficiency",
+      status: "pass",
+      detail: `${meta.approxRows.toLocaleString()} rows ready for profiling and outlier checks.`,
+    });
+  }
+
+  if (meta.headers.length < 2) {
+    const msg = `Only ${meta.headers.length} column(s) found; need at least 2 columns.`;
+    checks.push({ name: "Schema & Column Breadth", status: "fail", detail: msg });
+    blocking_issues.push(msg);
+    score -= 35;
+  } else {
+    checks.push({
+      name: "Schema & Column Breadth",
+      status: "pass",
+      detail: `${meta.headers.length} columns detected (${meta.excludedIds.length} ID key(s) excluded).`,
+    });
+  }
+
+  if (meta.numericCandidates.length === 0) {
+    const msg = "No non-ID quantitative metrics detected to compute KPIs or distributions.";
+    checks.push({ name: "Analytical Metric Coverage", status: "fail", detail: msg });
+    blocking_issues.push(msg);
+    score -= 40;
+  } else if (meta.numericCandidates.length === 1) {
+    const msg = `Single quantitative metric (${meta.numericCandidates[0]}); correlation analysis will be limited.`;
+    checks.push({ name: "Analytical Metric Coverage", status: "warn", detail: msg });
+    warnings.push(msg);
+    score -= 5;
+  } else {
+    checks.push({
+      name: "Analytical Metric Coverage",
+      status: "pass",
+      detail: `${meta.numericCandidates.length} metrics verified: ${meta.numericCandidates.slice(0, 4).join(", ")}.`,
+    });
+  }
+
+  if (meta.categoricalCandidates.length === 0) {
+    const msg = "No categorical dimensions detected; cohort comparison will be limited.";
+    checks.push({ name: "Cohort & Time Dimensions", status: "warn", detail: msg });
+    warnings.push(msg);
+    score -= 5;
+  } else {
+    checks.push({
+      name: "Cohort & Time Dimensions",
+      status: "pass",
+      detail: `${meta.categoricalCandidates.length} dimension(s): ${meta.categoricalCandidates.slice(0, 3).join(", ")}.`,
+    });
+  }
+
+  const readiness_score = Math.max(0, Math.min(100, score));
+  const is_good_dataset = blocking_issues.length === 0;
+  const status: "perfect" | "good_with_warnings" | "unusable" = !is_good_dataset
+    ? "unusable"
+    : warnings.length === 0 && readiness_score >= 90
+    ? "perfect"
+    : "good_with_warnings";
+
+  const summary = !is_good_dataset
+    ? `'${datasetName || "dataset.csv"}' failed readiness checks: ${blocking_issues[0]}`
+    : status === "perfect"
+    ? `'${datasetName || "dataset.csv"}' verified as a perfect dataset (${readiness_score}/100): ${meta.approxRows} rows × ${meta.headers.length} cols.`
+    : `'${datasetName || "dataset.csv"}' verified as a good dataset (${readiness_score}/100) with ${warnings.length} minor note(s).`;
+
+  if (!is_good_dataset) {
+    return {
+      dataset_name: datasetName || "dataset.csv",
+      verification: {
+        status,
+        is_good_dataset: false,
+        readiness_score,
+        summary,
+        row_count: meta.approxRows,
+        column_count: meta.headers.length,
+        cleaned_row_count: meta.approxRows,
+        cleaned_column_count: meta.headers.length,
+        completeness_pct: 100,
+        duplicate_rows: 0,
+        numeric_metrics: meta.numericCandidates,
+        categorical_dimensions: meta.categoricalCandidates,
+        temporal_dimensions: [],
+        excluded_id_columns: meta.excludedIds,
+        checks,
+        warnings,
+        blocking_issues,
+      },
+      problem_definition: null,
+    };
+  }
+
+  const northStar = meta.numericCandidates[0];
+  const guardrail =
+    meta.numericCandidates.find((c) => /churn|chargeback|risk|latency|cost/i.test(c)) ||
+    meta.numericCandidates[1] ||
+    northStar;
+  const primaryDim = meta.categoricalCandidates[0];
+  const dimPhrase = primaryDim ? `across ${primaryDim}` : "across cohorts";
+  const core_question = userGoal.trim()
+    ? `Given '${userGoal.trim()}', which cohorts ${dimPhrase} drive ${northStar} while keeping ${guardrail} within safe limits?`
+    : `Which cohorts ${dimPhrase} drive sustainable ${northStar} growth while controlling ${guardrail} risk and outlier volatility?`;
+
+  const aligned_metrics: AlignedMetricSpec[] = meta.numericCandidates.slice(0, 4).map((col, i) => {
+    const isRate = /rate|pct|percent|ratio|churn|chargeback|margin/i.test(col);
+    const role: AlignedMetricSpec["role"] =
+      i === 0 ? "North Star" : col === guardrail ? "Guardrail" : "Driver";
+    const aggregation = isRate ? "AVERAGE / P50 / P95 (never SUM)" : "SUM & Cohort Share %";
+    return {
+      metric_name: col,
+      role,
+      aggregation,
+      stakeholder_alignment: `Aligned ${role.toLowerCase()} metric evaluated via ${aggregation}.`,
+    };
+  });
+  meta.categoricalCandidates.slice(0, 2).forEach((dim) => {
+    aligned_metrics.push({
+      metric_name: dim,
+      role: "Segment Dimension",
+      aggregation: "GROUP BY / ANOVA η²",
+      stakeholder_alignment: `Primary slicing dimension for cohort variance and Pareto benchmarking.`,
+    });
+  });
+
+  const recommended_analysis_prompt = `Analyze '${datasetName || "dataset.csv"}' to answer: ${core_question} Align KPIs on ${meta.numericCandidates.slice(0, 3).join(", ")}${primaryDim ? ` segmented by ${primaryDim}` : ""}, quantify Pareto/HHI concentration, and isolate anomalies.`;
+
+  return {
+    dataset_name: datasetName || "dataset.csv",
+    verification: {
+      status,
+      is_good_dataset: true,
+      readiness_score,
+      summary,
+      row_count: meta.approxRows,
+      column_count: meta.headers.length,
+      cleaned_row_count: meta.approxRows,
+      cleaned_column_count: meta.headers.length,
+      completeness_pct: 100,
+      duplicate_rows: 0,
+      numeric_metrics: meta.numericCandidates,
+      categorical_dimensions: meta.categoricalCandidates,
+      temporal_dimensions: [],
+      excluded_id_columns: meta.excludedIds,
+      checks,
+      warnings,
+      blocking_issues: [],
+    },
+    problem_definition: {
+      core_question,
+      business_goal: `Maximize ${northStar} and operating efficiency ${dimPhrase} while keeping ${guardrail} within stakeholder thresholds.`,
+      decision_needed: `Prioritize resource allocation and risk remediation ${dimPhrase} based on Pareto share and anomaly diagnostics.`,
+      stakeholders: [
+        {
+          stakeholder_role: "Executive / Business Owner",
+          primary_concern: `Scaling ${northStar} across top-performing ${primaryDim || "cohorts"}.`,
+          target_metrics: [northStar],
+        },
+        {
+          stakeholder_role: "Risk & Operations Lead",
+          primary_concern: `Monitoring ${guardrail} exposure and isolating tail outliers.`,
+          target_metrics: [guardrail],
+        },
+      ],
+      aligned_metrics,
+      clarifying_questions: [
+        `Should optimization prioritize total ${northStar} growth or efficiency per ${primaryDim || "unit"}?`,
+        `What upper threshold on ${guardrail} triggers immediate stakeholder escalation?`,
+      ],
+      recommended_analysis_prompt,
+      static_signals: [
+        `Schema-detected North Star: ${northStar}; Guardrail: ${guardrail}.`,
+        ...(primaryDim ? [`Primary segmentation dimension: ${primaryDim}.`] : []),
+      ],
+      synthesis_mode: "static_only",
+      ai_provider_used: "static-code (client preview)",
+    },
+  };
 }

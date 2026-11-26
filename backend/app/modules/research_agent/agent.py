@@ -31,9 +31,40 @@ logger = logging.getLogger("vectronyx.research_agent")
 
 async def stream_groq_synthesis(system_prompt: str, user_prompt: str) -> AsyncGenerator[str, None]:
     """
-    Streams tokens via Groq Cloud API (~250 tokens/sec LPU delivery).
+    Streams synthesis tokens via Groq Cloud API or NVIDIA NIM (OpenAI-compatible fallback/primary).
     """
-    groq_key = settings.GROQ_API_KEY
+    groq_key = (settings.GROQ_API_KEY or "").strip()
+    nvidia_key = (settings.NVIDIA_API_KEY or "").strip()
+    configured = (settings.LLM_PROVIDER or "").strip().lower()
+    prefer_nvidia = configured in ("nvidia", "nvidia_nim", "nvidia-nim", "nim") and bool(nvidia_key)
+
+    if prefer_nvidia or (not groq_key and nvidia_key):
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(
+                api_key=nvidia_key,
+                base_url=settings.NVIDIA_BASE_URL or "https://integrate.api.nvidia.com/v1",
+            )
+            model = settings.NVIDIA_MODEL or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content or "" if chunk.choices else ""
+                if delta:
+                    yield delta
+            return
+        except Exception as e:
+            logger.warning(f"NVIDIA NIM streaming error: {e}", exc_info=True)
+            if not groq_key:
+                return
+
     if not groq_key:
         return
 

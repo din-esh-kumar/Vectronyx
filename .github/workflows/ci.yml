@@ -69,7 +69,7 @@ jobs:
           echo "Scanning tracked client files for potential secrets..."
           python -c '
           import re, sys, os
-          pattern = re.compile(r"""(?:AIzaSy|sk-proj-|ghp_|gho_|xox[baprs]-|sq0csp-)[\w-]{16,}""")
+          pattern = re.compile(r"""(?:AIzaSy|sk-proj-|nvapi-|ghp_|gho_|xox[baprs]-|sq0csp-)[\w-]{16,}""")
           violations = []
           for root, _, files in os.walk("frontend/src"):
               for f in files:
@@ -131,6 +131,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check deployment configuration
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          NVIDIA_BASE_URL: ${{ vars.NVIDIA_BASE_URL }}
+          NVIDIA_MODEL: ${{ vars.NVIDIA_MODEL }}
         run: |
           echo "=========================================="
           echo "Vectronyx CI/CD: Pipeline Verified Clean"
@@ -140,7 +149,7 @@ jobs:
           if [ -n "${{ secrets.HF_TOKEN }}" ] && [ -n "${{ secrets.HF_SPACE_ID }}" ]; then
             echo "Deploying backend to HuggingFace Space: ${{ secrets.HF_SPACE_ID }}..."
             pip install huggingface_hub python-dotenv
-            python scripts/deploy_hf_space.py --space-id "${{ secrets.HF_SPACE_ID }}" || echo "HF deployment finished with notice"
+            python scripts/deploy_hf_space.py --space-id "${{ secrets.HF_SPACE_ID }}" --sync-ci-env || echo "HF deployment finished with notice"
           else
             echo "No HF_TOKEN/HF_SPACE_ID configured; skipping remote push to Space."
           fi

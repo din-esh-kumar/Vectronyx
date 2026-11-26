@@ -1,5 +1,5 @@
 // frontend/src/features/data-analyst/DataAnalyst.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -15,7 +15,6 @@ import {
   FileText,
   Layers,
   Printer,
-  RefreshCw,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -41,14 +40,21 @@ import {
   SegmentBenchmarksSection,
 } from "./QuantitativeSections";
 import { ReportCharts } from "./ReportCharts";
+import { BIReportViewer } from "./BIReportViewer";
+import { AnalysisPromptCard } from "./AnalysisPromptCard";
+import { DatasetVerificationCard } from "./DatasetVerificationCard";
 import {
   SAMPLE_FINTECH_CSV,
   SAMPLE_SAAS_CSV,
   getFallbackPlan,
   getFintechPlan,
 } from "./fallbackPlans";
-import { buildClientDossierMarkdown, inspectCsvMetadata } from "./formatters";
-import type { DashboardPlan, KPISpec } from "./types";
+import {
+  buildClientDossierMarkdown,
+  buildOfflineDatasetIntake,
+  inspectCsvMetadata,
+} from "./formatters";
+import type { DashboardPlan, DatasetIntakeResponse, KPISpec } from "./types";
 
 const API_BASE = `${API_URL}/api/analyst`;
 
@@ -127,6 +133,7 @@ const DEFAULT_PROMPT =
 export default function DataAnalyst() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSample = searchParams.get("sample");
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [csvContent, setCsvContent] = useState<string>(() =>
     initialSample === "saas"
@@ -162,6 +169,36 @@ export default function DataAnalyst() {
   const [activeTab, setActiveTab] = useState<"dossier" | "visuals" | "bi">("dossier");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+  const [intakeResult, setIntakeResult] = useState<DatasetIntakeResponse | null>(null);
+  const [verifyingIntake, setVerifyingIntake] = useState<boolean>(false);
+
+  const runDatasetIntake = async (csvText: string, name: string, goal = "") => {
+    if (!csvText.trim()) {
+      setIntakeResult(null);
+      return;
+    }
+    const offlinePreview = buildOfflineDatasetIntake(csvText, name, goal);
+    setIntakeResult(offlinePreview);
+    setVerifyingIntake(true);
+    try {
+      const fd = new FormData();
+      fd.append("raw_csv", csvText);
+      fd.append("dataset_name", name || "dataset.csv");
+      fd.append("user_goal", goal);
+      const res = await fetch(`${API_BASE}/verify-and-define`, {
+        method: "POST",
+        body: fd,
+      });
+      if (res.ok) {
+        const liveData: DatasetIntakeResponse = await res.json();
+        setIntakeResult(liveData);
+      }
+    } catch {
+      // Keep deterministic offline verification & problem definition preview
+    } finally {
+      setVerifyingIntake(false);
+    }
+  };
 
   useEffect(() => {
     const sample = searchParams.get("sample");
@@ -171,6 +208,7 @@ export default function DataAnalyst() {
       setDashboard(getFallbackPlan("saas_enterprise_q3.csv"));
       setUserPrompt(DEFAULT_PROMPT);
       setErrorMsg("");
+      void runDatasetIntake(SAMPLE_SAAS_CSV, "saas_enterprise_q3.csv");
     } else if (sample === "fintech") {
       setCsvContent(SAMPLE_FINTECH_CSV);
       setFileName("fintech_global_volume.csv");
@@ -179,6 +217,7 @@ export default function DataAnalyst() {
         "Cross-border FinTech liquidity audit: analyze corridor take-rates, settlement latency vs chargebacks, and anomaly tail risks."
       );
       setErrorMsg("");
+      void runDatasetIntake(SAMPLE_FINTECH_CSV, "fintech_global_volume.csv");
     }
   }, [searchParams]);
 
@@ -216,6 +255,7 @@ export default function DataAnalyst() {
     setUserPrompt(DEFAULT_PROMPT);
     setErrorMsg("");
     if (searchParams.has("sample")) setSearchParams({});
+    void runDatasetIntake(SAMPLE_SAAS_CSV, "saas_enterprise_q3.csv");
     toast.success("Loaded Enterprise SaaS sample");
   };
 
@@ -228,6 +268,7 @@ export default function DataAnalyst() {
     );
     setErrorMsg("");
     if (searchParams.has("sample")) setSearchParams({});
+    void runDatasetIntake(SAMPLE_FINTECH_CSV, "fintech_global_volume.csv");
     toast.success("Loaded FinTech liquidity sample");
   };
 
@@ -235,6 +276,7 @@ export default function DataAnalyst() {
     setCsvContent("");
     setFileName("");
     setDashboard(null);
+    setIntakeResult(null);
     setUserPrompt(DEFAULT_PROMPT);
     setErrorMsg("");
     setStreamingStatus("");
@@ -253,6 +295,7 @@ export default function DataAnalyst() {
       setDashboard(null);
       setErrorMsg("");
       if (searchParams.has("sample")) setSearchParams({});
+      void runDatasetIntake(text, file.name);
       toast.success(`Loaded ${file.name}`);
     };
     reader.readAsText(file);
@@ -263,6 +306,20 @@ export default function DataAnalyst() {
     if (!csvContent.trim()) {
       setErrorMsg("Please upload a CSV or load a sample dataset first.");
       toast.error("Please load or upload a CSV dataset");
+      return;
+    }
+    if (intakeResult && !intakeResult.verification.is_good_dataset) {
+      const msg =
+        intakeResult.verification.blocking_issues[0] ||
+        "Dataset failed readiness verification. Upload a valid dataset first.";
+      setErrorMsg(msg);
+      toast.error("Dataset failed verification checks");
+      return;
+    }
+    if (!userPrompt.trim()) {
+      setErrorMsg("Please enter an analysis prompt or select a preset first.");
+      toast.error("Please enter an analysis prompt");
+      promptTextareaRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -643,107 +700,34 @@ export default function DataAnalyst() {
           )}
         </div>
 
-        <div className="lg:col-span-7 p-5 rounded-2xl glass-card-bronze border border-amber-500/25 flex flex-col justify-between space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-amber-200 flex items-center gap-2 mb-3">
-              <Target className="w-4 h-4 text-amber-400" />
-              <span>2. Analysis Prompt</span>
-            </h2>
-
-            <textarea
-              value={userPrompt}
-              onChange={(e) => setUserPrompt(e.target.value)}
-              rows={3}
-              placeholder="State the analytical objective, variance question, or decision hypothesis..."
-              className="w-full text-xs sm:text-sm border border-violet-500/25 bg-violet-950/40 rounded-xl p-3 focus-vb text-white resize-none font-sans placeholder-violet-400/40"
-            />
-
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {dynamicPromptChips.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setUserPrompt(chip)}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-violet-900/30 hover:bg-violet-800/40 text-violet-200 border border-violet-500/20 transition cursor-pointer text-left"
-                >
-                  + {chip}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3 pt-3 border-t border-amber-500/15">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-                <span className="text-amber-300/90 font-semibold">Refinement Passes (16K Max Tokens):</span>
-                {[
-                  { n: 1, label: "1× Draft" },
-                  { n: 3, label: "3× Senior" },
-                  { n: 5, label: "5× Principal" },
-                  { n: 8, label: "8× Boardroom" },
-                ].map((opt) => (
-                  <button
-                    key={opt.n}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => setRefinementIterations(opt.n)}
-                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
-                      refinementIterations === opt.n
-                        ? "bg-amber-500/25 text-amber-200 border-amber-400/60 font-bold"
-                        : "bg-violet-950/50 text-violet-300/75 border-violet-500/20 hover:border-amber-400/35"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <span className="text-[10px] font-mono text-emerald-300/80">
-                Target ≥ 92/100 · 3-Page Power BI (.pbip)
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                {loading && streamingStatus && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-mono text-amber-300 animate-fadeIn">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-400" />
-                      <span className="truncate">{streamingStatus}</span>
-                    </div>
-                    {iterationLog.length > 1 && (
-                      <div className="max-h-20 overflow-y-auto space-y-0.5 pl-5 text-[10px] font-mono text-violet-300/70">
-                        {iterationLog.slice(0, -1).map((line, i) => (
-                          <div key={i} className="truncate">
-                            ✓ {line}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleGenerateDashboard}
-                disabled={loading}
-                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-700 via-purple-800 to-[#884F2E] hover:from-violet-600 hover:to-[#A36B4A] disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-violet-950/40 cursor-pointer active:scale-95 border border-[#E8A276]/30 shrink-0"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-[#E8A276]" />
-                    <span>Refining ({refinementIterations}×)...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-[#E8A276]" />
-                    <span>Generate Principal Report ({refinementIterations}×)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AnalysisPromptCard
+          userPrompt={userPrompt}
+          setUserPrompt={setUserPrompt}
+          dynamicPromptChips={dynamicPromptChips}
+          loading={loading}
+          refinementIterations={refinementIterations}
+          setRefinementIterations={setRefinementIterations}
+          streamingStatus={streamingStatus}
+          iterationLog={iterationLog}
+          onGenerate={handleGenerateDashboard}
+          textareaRef={promptTextareaRef}
+        />
       </div>
+
+      <DatasetVerificationCard
+        intake={intakeResult}
+        verifying={verifyingIntake}
+        onApplyRecommendedPrompt={(prompt) => {
+          setUserPrompt(prompt);
+          promptTextareaRef.current?.focus();
+          toast.success("Applied aligned problem definition to Analysis Prompt");
+        }}
+        onReevaluateWithContext={() => {
+          if (csvContent.trim()) {
+            void runDatasetIntake(csvContent, fileName || "dataset.csv", userPrompt);
+          }
+        }}
+      />
 
       {errorMsg && (
         <div className="p-4 bg-rose-950/40 border border-rose-500/30 text-rose-300 rounded-xl text-sm flex items-center gap-2">
@@ -867,7 +851,7 @@ export default function DataAnalyst() {
               }`}
             >
               <Code2 className="w-4 h-4" />
-              <span>3. BI Architecture & DAX</span>
+              <span>3. BI Viewer & Exports</span>
             </button>
           </div>
 
@@ -1112,6 +1096,155 @@ export default function DataAnalyst() {
 
                     <SegmentBenchmarksSection benchmarks={dossier.segment_benchmarks} />
 
+                    {/* Data Cleansing, Redundancy Removal & Dynamic Data Science (Gemini + Groq) */}
+                    {(dashboard.cleansing_report || dashboard.data_science_summary) && (
+                      <div className="p-6 rounded-2xl glass-card border border-emerald-500/25 space-y-5 print-break-avoid">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-emerald-400" />
+                            <h3 className="text-base font-bold text-white font-display">
+                              Automated Data Cleansing, Redundancy Removal & ML Pipeline
+                            </h3>
+                          </div>
+                          {dashboard.models_used && dashboard.models_used.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {dashboard.models_used.map((m) => (
+                                <span
+                                  key={m}
+                                  className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-violet-900/50 text-amber-200 border border-amber-500/30"
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {dashboard.cleansing_report && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Rows Cleansed</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.raw_rows.toLocaleString()} →{" "}
+                                {dashboard.cleansing_report.cleaned_rows.toLocaleString()}
+                              </div>
+                              <div className="text-[11px] text-emerald-300 font-mono">
+                                {dashboard.cleansing_report.duplicates_removed} duplicate(s) removed
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Redundant Cols</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.raw_columns} →{" "}
+                                {dashboard.cleansing_report.cleaned_columns}
+                              </div>
+                              <div className="text-[11px] text-amber-300 font-mono truncate">
+                                {dashboard.cleansing_report.collinear_features_pruned.length} collinear ML pruned
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Hygiene & Imputations</div>
+                              <div className="text-lg font-bold text-white font-mono mt-1">
+                                {dashboard.cleansing_report.missing_values_imputed.toLocaleString()}
+                              </div>
+                              <div className="text-[11px] text-violet-300/80 font-mono">
+                                {dashboard.cleansing_report.whitespace_and_case_normalized} text normalizations
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-black/35 border border-violet-500/20">
+                              <div className="text-violet-300/70 font-mono text-[11px]">Integrity Uplift</div>
+                              <div className="text-lg font-bold text-emerald-400 font-mono mt-1">
+                                {dashboard.cleansing_report.integrity_before}% →{" "}
+                                {dashboard.cleansing_report.integrity_after}%
+                              </div>
+                              <div className="text-[11px] text-violet-300/80 font-mono">
+                                {dashboard.cleansing_report.type_coercions.length} type coercion(s)
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {dashboard.data_science_summary && (
+                          <div className="space-y-3">
+                            {dashboard.data_science_summary.ai_data_science_verdict && (
+                              <div className="p-3.5 rounded-xl bg-violet-950/50 border border-violet-500/25 text-xs text-violet-100 leading-relaxed">
+                                <span className="font-mono font-bold text-amber-300 uppercase mr-1.5">
+                                  Dual-AI Data Science Verdict:
+                                </span>
+                                {dashboard.data_science_summary.ai_data_science_verdict}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                              {dashboard.data_science_summary.top_feature_importances.length > 0 && (
+                                <div className="p-4 rounded-xl bg-black/35 border border-violet-500/20 space-y-2.5">
+                                  <div className="flex items-center justify-between font-mono">
+                                    <span className="font-bold text-amber-300 uppercase text-[11px]">
+                                      Predictive Drivers ({dashboard.data_science_summary.target_metric})
+                                    </span>
+                                    {dashboard.data_science_summary.r2_score !== null &&
+                                      dashboard.data_science_summary.r2_score !== undefined && (
+                                        <span className="text-emerald-300 text-[11px]">
+                                          R² = {dashboard.data_science_summary.r2_score}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <div className="space-y-2">
+                                    {dashboard.data_science_summary.top_feature_importances.slice(0, 5).map((fi) => (
+                                      <div key={fi.feature} className="space-y-1">
+                                        <div className="flex justify-between font-mono text-[11px]">
+                                          <span className="text-white truncate">{fi.feature}</span>
+                                          <span className="text-amber-300">{fi.importance_pct}%</span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full bg-violet-950 overflow-hidden">
+                                          <div
+                                            className="h-full bg-gradient-to-r from-violet-500 to-amber-400"
+                                            style={{ width: `${Math.min(100, fi.importance_pct)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {dashboard.data_science_summary.clusters.length > 0 && (
+                                <div className="p-4 rounded-xl bg-black/35 border border-violet-500/20 space-y-2.5">
+                                  <div className="flex items-center justify-between font-mono">
+                                    <span className="font-bold text-amber-300 uppercase text-[11px]">
+                                      Silhouette K-Means Cohorts (k={dashboard.data_science_summary.optimal_clusters})
+                                    </span>
+                                    {dashboard.data_science_summary.silhouette_score !== null &&
+                                      dashboard.data_science_summary.silhouette_score !== undefined && (
+                                        <span className="text-emerald-300 text-[11px]">
+                                          Silhouette = {dashboard.data_science_summary.silhouette_score}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {dashboard.data_science_summary.clusters.map((cl) => (
+                                      <div
+                                        key={cl.cluster_id}
+                                        className="p-2 rounded-lg bg-violet-950/40 border border-violet-500/15 flex items-center justify-between gap-2"
+                                      >
+                                        <span className="font-semibold text-white truncate">{cl.label}</span>
+                                        <span className="font-mono text-[11px] text-amber-200 shrink-0">
+                                          {cl.size} rows ({cl.share_pct}%)
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {dossier.concentration_risk && (
                       <div className="p-6 rounded-2xl glass-card border border-violet-500/20 space-y-4 print-break-avoid">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1297,6 +1430,8 @@ export default function DataAnalyst() {
              ================================================================= */}
           {activeTab === "bi" && (
             <div className="space-y-6">
+              <BIReportViewer dashboard={dashboard} />
+
               <div className="p-6 rounded-3xl glass-card border border-violet-500/20 space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
@@ -1482,6 +1617,10 @@ export default function DataAnalyst() {
             </div>
           )}
         </div>
+      )}
+
+      {!dashboard && !loading && (
+        <BIReportViewer dashboard={null} />
       )}
     </div>
   );

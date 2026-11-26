@@ -5,13 +5,14 @@ from typing import List
 
 try:
     from dotenv import load_dotenv, find_dotenv
-    # Resolve root directory: config.py is in backend/app/core/ (4 levels up)
-    root_env = Path(__file__).resolve().parents[3] / ".env"
-    if root_env.is_file():
-        load_dotenv(dotenv_path=root_env, override=True)
-    else:
-        # Fallback to search up directory tree
-        load_dotenv(find_dotenv(usecwd=True), override=True)
+    if os.getenv("ENVIRONMENT", "").strip().lower() != "test":
+        # Resolve root directory: config.py is in backend/app/core/ (4 levels up)
+        root_env = Path(__file__).resolve().parents[3] / ".env"
+        if root_env.is_file():
+            load_dotenv(dotenv_path=root_env, override=False)
+        else:
+            # Fallback to search up directory tree
+            load_dotenv(find_dotenv(usecwd=True), override=False)
 except ImportError:
     pass
 
@@ -46,6 +47,11 @@ class Settings:
     # Groq Cloud (Ultra-fast chat & agent loop)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+    # NVIDIA NIM (OpenAI-compatible cloud inference)
+    NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY") or os.getenv("NVIDIA_NIM_API_KEY", "")
+    NVIDIA_BASE_URL: str = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    NVIDIA_MODEL: str = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
 
     # Ollama
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

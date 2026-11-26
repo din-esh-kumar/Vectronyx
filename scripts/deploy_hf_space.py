@@ -32,6 +32,7 @@ SECRET_KEYS = (
     "SECRET_KEY",
     "GEMINI_API_KEY",
     "GROQ_API_KEY",
+    "NVIDIA_API_KEY",
 )
 
 VARIABLE_KEYS = (
@@ -41,12 +42,28 @@ VARIABLE_KEYS = (
     "LLM_PROVIDER",
     "GEMINI_MODEL",
     "GROQ_MODEL",
+    "NVIDIA_BASE_URL",
+    "NVIDIA_MODEL",
     "EMBEDDING_PROVIDER",
     "EMBEDDING_MODEL",
     "FASTEMBED_MODEL",
     "VECTOR_STORE_PROVIDER",
     "VECTOR_DIMENSION",
     "ALLOWED_ORIGINS",
+)
+
+CI_SYNC_SECRET_KEYS = (
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "NVIDIA_API_KEY",
+)
+
+CI_SYNC_VARIABLE_KEYS = (
+    "LLM_PROVIDER",
+    "GEMINI_MODEL",
+    "GROQ_MODEL",
+    "NVIDIA_BASE_URL",
+    "NVIDIA_MODEL",
 )
 
 
@@ -147,7 +164,16 @@ def main() -> int:
     parser.add_argument(
         "--sync-env",
         action="store_true",
-        help="Sync backend secrets and variables from root .env to the Space.",
+        help="Sync backend secrets and variables from .env to the Space.",
+    )
+    parser.add_argument(
+        "--env-file",
+        help="Optional path to a .env file for --sync-env (defaults to <repo-root>/.env).",
+    )
+    parser.add_argument(
+        "--sync-ci-env",
+        action="store_true",
+        help="Sync non-empty LLM secrets/variables (including NVIDIA_API_KEY) from process env to the Space.",
     )
     parser.add_argument(
         "--wait",
@@ -194,16 +220,18 @@ def main() -> int:
     )
 
     if args.sync_env:
-        env_path = repo_root / ".env"
+        env_path = Path(args.env_file).expanduser().resolve() if args.env_file else (repo_root / ".env")
         if dotenv_values is None:
             print("Warning: python-dotenv not installed; skipping secret sync.", file=sys.stderr)
         elif not env_path.is_file():
             print(f"Warning: {env_path} not found; skipping secret sync.", file=sys.stderr)
         else:
             env_map = dotenv_values(env_path)
-            print("Syncing secrets and variables from .env to Space...")
+            print(f"Syncing secrets and variables from {env_path} to Space...")
             for key in SECRET_KEYS:
                 val = (env_map.get(key) or "").strip()
+                if not val and key == "NVIDIA_API_KEY":
+                    val = (env_map.get("NVIDIA_NIM_API_KEY") or "").strip()
                 if val:
                     if key == "DATABASE_URL" and ".supabase.co:" in val and "pooler.supabase.com" not in val:
                         print(
@@ -224,6 +252,21 @@ def main() -> int:
                 if val:
                     api.add_space_variable(repo_id=space_id, key=key, value=val)
                     print(f"  Synced variable: {key}={val}")
+
+    if args.sync_ci_env:
+        print("Syncing configured CI LLM secrets and variables to Space...")
+        for key in CI_SYNC_SECRET_KEYS:
+            val = (os.getenv(key) or "").strip()
+            if not val and key == "NVIDIA_API_KEY":
+                val = (os.getenv("NVIDIA_NIM_API_KEY") or "").strip()
+            if val:
+                api.add_space_secret(repo_id=space_id, key=key, value=val)
+                print(f"  Synced CI secret: {key}")
+        for key in CI_SYNC_VARIABLE_KEYS:
+            val = (os.getenv(key) or "").strip()
+            if val:
+                api.add_space_variable(repo_id=space_id, key=key, value=val)
+                print(f"  Synced CI variable: {key}={val}")
 
     ignore_patterns = [
         "**/__pycache__/**",
