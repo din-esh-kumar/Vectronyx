@@ -8,9 +8,11 @@ from typing import Optional
 
 from app.core.config import settings
 from app.modules.data_analyst.schemas import (
+    DatasetIntakeResponse,
     DatasetProfile,
     DashboardPlan,
 )
+from app.modules.data_analyst.problem_definer import verify_and_define_dataset
 from app.modules.data_analyst.analyst import (
     profile_dataset,
     generate_complete_dashboard,
@@ -75,6 +77,40 @@ async def upload_and_profile_dataset(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error profiling dataset: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to profile CSV dataset.")
+
+
+@router.post("/verify-and-define", response_model=DatasetIntakeResponse)
+async def verify_and_define_endpoint(
+    file: Optional[UploadFile] = File(None),
+    raw_csv: Optional[str] = Form(None),
+    dataset_name: Optional[str] = Form("dataset.csv"),
+    user_goal: Optional[str] = Form(""),
+):
+    """
+    Stage 1: Verify dataset readiness ('perfect', 'good_with_warnings', or 'unusable').
+    Stage 2: If good, define the core question, business goal, decision needed,
+             and align key metrics with stakeholders based on the received dataset.
+    """
+    try:
+        csv_text = ""
+        if file:
+            csv_text = await _read_upload_bounded(file)
+            dataset_name = file.filename or dataset_name
+        elif raw_csv is not None:
+            csv_text = _validate_raw_csv_size(raw_csv)
+        else:
+            raise HTTPException(status_code=400, detail="Either 'file' or 'raw_csv' must be provided.")
+
+        return await verify_and_define_dataset(
+            csv_text=csv_text,
+            dataset_name=dataset_name or "dataset.csv",
+            user_goal=user_goal or "",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying dataset and defining problem: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to verify dataset.")
 
 
 @router.post("/generate-dashboard", response_model=DashboardPlan)

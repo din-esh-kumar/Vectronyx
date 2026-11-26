@@ -260,6 +260,62 @@ export interface DataScienceSummary {
   models_participated: string[];
 }
 
+export interface DatasetVerificationCheck {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+
+export interface DatasetVerificationResult {
+  status: "perfect" | "good_with_warnings" | "unusable";
+  is_good_dataset: boolean;
+  readiness_score: number;
+  summary: string;
+  row_count: number;
+  column_count: number;
+  cleaned_row_count: number;
+  cleaned_column_count: number;
+  completeness_pct: number;
+  duplicate_rows: number;
+  numeric_metrics: string[];
+  categorical_dimensions: string[];
+  temporal_dimensions: string[];
+  excluded_id_columns: string[];
+  checks: DatasetVerificationCheck[];
+  warnings: string[];
+  blocking_issues: string[];
+}
+
+export interface AlignedMetricSpec {
+  metric_name: string;
+  role: "North Star" | "Guardrail" | "Driver" | "Segment Dimension";
+  aggregation: string;
+  stakeholder_alignment: string;
+}
+
+export interface StakeholderAlignment {
+  stakeholder_role: string;
+  primary_concern: string;
+  target_metrics: string[];
+}
+
+export interface ProblemDefinitionResult {
+  core_question: string;
+  business_goal: string;
+  decision_needed: string;
+  stakeholders: StakeholderAlignment[];
+  aligned_metrics: AlignedMetricSpec[];
+  clarifying_questions: string[];
+  recommended_analysis_prompt: string;
+  ai_provider_used: string;
+}
+
+export interface DatasetIntakeResponse {
+  dataset_name: string;
+  verification: DatasetVerificationResult;
+  problem_definition?: ProblemDefinitionResult | null;
+}
+
 export interface DashboardPlan {
   title: string;
   summary: string;
@@ -281,4 +337,6 @@ export interface DashboardPlan {
   cleansing_report?: DataCleansingReport | null;
   data_science_summary?: DataScienceSummary | null;
   models_used?: string[];
+  dataset_verification?: DatasetVerificationResult | null;
+  problem_definition?: ProblemDefinitionResult | null;
 }

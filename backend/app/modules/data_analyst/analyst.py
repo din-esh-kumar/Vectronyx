@@ -21,6 +21,10 @@ from app.modules.data_analyst.data_cleaner import (
     clean_and_deduplicate_dataset,
     run_dynamic_data_science_pipeline,
 )
+from app.modules.data_analyst.problem_definer import (
+    _build_deterministic_problem_definition,
+    verify_dataset_readiness,
+)
 from app.modules.data_analyst.profiler import (
     build_expert_statistical_diagnostics,
     classify_dataframe_roles,
@@ -1366,11 +1370,26 @@ def _assemble_expert_plan(
 def _prepare_cleansed_data_science_context(
     csv_text: str,
     user_prompt: str,
+    dataset_name: str = "dataset.csv",
 ) -> Dict[str, Any]:
-    """Shared deterministic ingestion, cleansing, redundancy removal, EDA, and ML pipeline."""
-    raw_df = pd.read_csv(io.StringIO(csv_text))
-    df, cleansing_report = clean_and_deduplicate_dataset(raw_df)
-    roles = classify_dataframe_roles(df)
+    """Shared deterministic verification, ingestion, cleansing, problem definition, EDA, and ML pipeline."""
+    verification, verified_df, verified_cleansing, verified_roles = verify_dataset_readiness(
+        csv_text, dataset_name=dataset_name
+    )
+    if not verification.is_good_dataset or verified_df is None or verified_cleansing is None or verified_roles is None:
+        raise ValueError(
+            "; ".join(verification.blocking_issues) or verification.summary
+        )
+    df = verified_df
+    cleansing_report = verified_cleansing
+    roles = verified_roles
+    problem_definition = _build_deterministic_problem_definition(
+        df=df,
+        roles=roles,
+        verification=verification,
+        dataset_name=dataset_name,
+        user_goal=user_prompt,
+    )
     _, profile, anomalies = profile_dataset(csv_text, roles=roles, df=df)
     target_numerics, target_cats, intent = resolve_prompt_intent_and_columns(df, user_prompt, roles=roles)
 
@@ -1433,6 +1452,8 @@ def _prepare_cleansed_data_science_context(
         "deep_stats_summary": deep_stats_summary,
         "target_focus": target_focus,
         "schema_summary": schema_summary,
+        "dataset_verification": verification,
+        "problem_definition": problem_definition,
     }
 
 
@@ -1556,7 +1577,7 @@ async def generate_complete_dashboard(
     4. Runs N iterations of dual-model Principal Peer Review & refinement until Expert Certified.
     5. Enriches enterprise Power BI DAX folders, typed Power Query M, and 3-page PBIP layout blueprint.
     """
-    ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt)
+    ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt, dataset_name=dataset_name)
     llm_plan, ds_summary, models_used = await _run_dual_model_planning(
         ctx,
         user_prompt=user_prompt,
@@ -1609,6 +1630,10 @@ async def generate_complete_dashboard(
     final_plan.cleansing_report = ctx["cleansing_report"]
     final_plan.data_science_summary = ds_summary
     final_plan.models_used = models_used
+    final_plan.dataset_verification = ctx["dataset_verification"]
+    final_plan.problem_definition = ctx["problem_definition"]
+    final_plan.dataset_verification = ctx["dataset_verification"]
+    final_plan.problem_definition = ctx["problem_definition"]
     return final_plan
 
 
@@ -1627,10 +1652,14 @@ async def generate_complete_dashboard_stream(
     yield sse_event("status", {
         "step": 1,
         "stage": "profiling",
-        "message": f"Phase 1/6: Cleansing, deduplicating & classifying semantic roles for '{dataset_name}'..."
+        "message": f"Phase 1/6: Verifying dataset readiness, cleansing & defining problem metrics for '{dataset_name}'..."
     })
 
-    ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt)
+    try:
+        ctx = _prepare_cleansed_data_science_context(csv_text, user_prompt, dataset_name=dataset_name)
+    except ValueError as verify_err:
+        yield sse_event("error", {"detail": str(verify_err)})
+        return
     cr: DataCleansingReport = ctx["cleansing_report"]
     ds: DataScienceSummary = ctx["ds_summary"]
 
@@ -1724,6 +1753,8 @@ async def generate_complete_dashboard_stream(
     final_plan.cleansing_report = ctx["cleansing_report"]
     final_plan.data_science_summary = ds_summary
     final_plan.models_used = models_used
+    final_plan.dataset_verification = ctx["dataset_verification"]
+    final_plan.problem_definition = ctx["problem_definition"]
 
     yield sse_event("status", {
         "step": 6,

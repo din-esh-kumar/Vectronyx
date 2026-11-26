@@ -1,5 +1,5 @@
 # backend/app/modules/data_analyst/schemas.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 
 class ColumnMetric(BaseModel):
@@ -316,6 +316,62 @@ class LLMDataScienceSynthesis(BaseModel):
     predictive_driver_takeaway: str
 
 
+class DatasetVerificationCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    detail: str
+
+
+class DatasetVerificationResult(BaseModel):
+    status: Literal["perfect", "good_with_warnings", "unusable"]
+    is_good_dataset: bool
+    readiness_score: float = Field(..., ge=0.0, le=100.0)
+    summary: str
+    row_count: int = 0
+    column_count: int = 0
+    cleaned_row_count: int = 0
+    cleaned_column_count: int = 0
+    completeness_pct: float = 0.0
+    duplicate_rows: int = 0
+    numeric_metrics: List[str] = []
+    categorical_dimensions: List[str] = []
+    temporal_dimensions: List[str] = []
+    excluded_id_columns: List[str] = []
+    checks: List[DatasetVerificationCheck] = []
+    warnings: List[str] = []
+    blocking_issues: List[str] = []
+
+
+class AlignedMetricSpec(BaseModel):
+    metric_name: str
+    role: Literal["North Star", "Guardrail", "Driver", "Segment Dimension"] = "Driver"
+    aggregation: str
+    stakeholder_alignment: str
+
+
+class StakeholderAlignment(BaseModel):
+    stakeholder_role: str
+    primary_concern: str
+    target_metrics: List[str] = []
+
+
+class ProblemDefinitionResult(BaseModel):
+    core_question: str
+    business_goal: str
+    decision_needed: str
+    stakeholders: List[StakeholderAlignment] = []
+    aligned_metrics: List[AlignedMetricSpec] = []
+    clarifying_questions: List[str] = []
+    recommended_analysis_prompt: str
+    ai_provider_used: str = "deterministic"
+
+
+class DatasetIntakeResponse(BaseModel):
+    dataset_name: str = "dataset.csv"
+    verification: DatasetVerificationResult
+    problem_definition: Optional[ProblemDefinitionResult] = None
+
+
 class DashboardPlan(BaseModel):
     title: str
     summary: str
@@ -337,6 +393,8 @@ class DashboardPlan(BaseModel):
     cleansing_report: Optional[DataCleansingReport] = None
     data_science_summary: Optional[DataScienceSummary] = None
     models_used: List[str] = []
+    dataset_verification: Optional[DatasetVerificationResult] = None
+    problem_definition: Optional[ProblemDefinitionResult] = None
 
 
 class DashboardGenerateRequest(BaseModel):

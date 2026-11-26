@@ -42,14 +42,19 @@ import {
 import { ReportCharts } from "./ReportCharts";
 import { BIReportViewer } from "./BIReportViewer";
 import { AnalysisPromptCard } from "./AnalysisPromptCard";
+import { DatasetVerificationCard } from "./DatasetVerificationCard";
 import {
   SAMPLE_FINTECH_CSV,
   SAMPLE_SAAS_CSV,
   getFallbackPlan,
   getFintechPlan,
 } from "./fallbackPlans";
-import { buildClientDossierMarkdown, inspectCsvMetadata } from "./formatters";
-import type { DashboardPlan, KPISpec } from "./types";
+import {
+  buildClientDossierMarkdown,
+  buildOfflineDatasetIntake,
+  inspectCsvMetadata,
+} from "./formatters";
+import type { DashboardPlan, DatasetIntakeResponse, KPISpec } from "./types";
 
 const API_BASE = `${API_URL}/api/analyst`;
 
@@ -164,6 +169,36 @@ export default function DataAnalyst() {
   const [activeTab, setActiveTab] = useState<"dossier" | "visuals" | "bi">("dossier");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+  const [intakeResult, setIntakeResult] = useState<DatasetIntakeResponse | null>(null);
+  const [verifyingIntake, setVerifyingIntake] = useState<boolean>(false);
+
+  const runDatasetIntake = async (csvText: string, name: string, goal = "") => {
+    if (!csvText.trim()) {
+      setIntakeResult(null);
+      return;
+    }
+    const offlinePreview = buildOfflineDatasetIntake(csvText, name, goal);
+    setIntakeResult(offlinePreview);
+    setVerifyingIntake(true);
+    try {
+      const fd = new FormData();
+      fd.append("raw_csv", csvText);
+      fd.append("dataset_name", name || "dataset.csv");
+      fd.append("user_goal", goal);
+      const res = await fetch(`${API_BASE}/verify-and-define`, {
+        method: "POST",
+        body: fd,
+      });
+      if (res.ok) {
+        const liveData: DatasetIntakeResponse = await res.json();
+        setIntakeResult(liveData);
+      }
+    } catch {
+      // Keep deterministic offline verification & problem definition preview
+    } finally {
+      setVerifyingIntake(false);
+    }
+  };
 
   useEffect(() => {
     const sample = searchParams.get("sample");
@@ -173,6 +208,7 @@ export default function DataAnalyst() {
       setDashboard(getFallbackPlan("saas_enterprise_q3.csv"));
       setUserPrompt(DEFAULT_PROMPT);
       setErrorMsg("");
+      void runDatasetIntake(SAMPLE_SAAS_CSV, "saas_enterprise_q3.csv");
     } else if (sample === "fintech") {
       setCsvContent(SAMPLE_FINTECH_CSV);
       setFileName("fintech_global_volume.csv");
@@ -181,6 +217,7 @@ export default function DataAnalyst() {
         "Cross-border FinTech liquidity audit: analyze corridor take-rates, settlement latency vs chargebacks, and anomaly tail risks."
       );
       setErrorMsg("");
+      void runDatasetIntake(SAMPLE_FINTECH_CSV, "fintech_global_volume.csv");
     }
   }, [searchParams]);
 
@@ -218,6 +255,7 @@ export default function DataAnalyst() {
     setUserPrompt(DEFAULT_PROMPT);
     setErrorMsg("");
     if (searchParams.has("sample")) setSearchParams({});
+    void runDatasetIntake(SAMPLE_SAAS_CSV, "saas_enterprise_q3.csv");
     toast.success("Loaded Enterprise SaaS sample");
   };
 
@@ -230,6 +268,7 @@ export default function DataAnalyst() {
     );
     setErrorMsg("");
     if (searchParams.has("sample")) setSearchParams({});
+    void runDatasetIntake(SAMPLE_FINTECH_CSV, "fintech_global_volume.csv");
     toast.success("Loaded FinTech liquidity sample");
   };
 
@@ -237,6 +276,7 @@ export default function DataAnalyst() {
     setCsvContent("");
     setFileName("");
     setDashboard(null);
+    setIntakeResult(null);
     setUserPrompt(DEFAULT_PROMPT);
     setErrorMsg("");
     setStreamingStatus("");
@@ -255,6 +295,7 @@ export default function DataAnalyst() {
       setDashboard(null);
       setErrorMsg("");
       if (searchParams.has("sample")) setSearchParams({});
+      void runDatasetIntake(text, file.name);
       toast.success(`Loaded ${file.name}`);
     };
     reader.readAsText(file);
@@ -265,6 +306,14 @@ export default function DataAnalyst() {
     if (!csvContent.trim()) {
       setErrorMsg("Please upload a CSV or load a sample dataset first.");
       toast.error("Please load or upload a CSV dataset");
+      return;
+    }
+    if (intakeResult && !intakeResult.verification.is_good_dataset) {
+      const msg =
+        intakeResult.verification.blocking_issues[0] ||
+        "Dataset failed readiness verification. Upload a valid dataset first.";
+      setErrorMsg(msg);
+      toast.error("Dataset failed verification checks");
       return;
     }
     if (!userPrompt.trim()) {
@@ -664,6 +713,21 @@ export default function DataAnalyst() {
           textareaRef={promptTextareaRef}
         />
       </div>
+
+      <DatasetVerificationCard
+        intake={intakeResult}
+        verifying={verifyingIntake}
+        onApplyRecommendedPrompt={(prompt) => {
+          setUserPrompt(prompt);
+          promptTextareaRef.current?.focus();
+          toast.success("Applied aligned problem definition to Analysis Prompt");
+        }}
+        onReevaluateWithContext={() => {
+          if (csvContent.trim()) {
+            void runDatasetIntake(csvContent, fileName || "dataset.csv", userPrompt);
+          }
+        }}
+      />
 
       {errorMsg && (
         <div className="p-4 bg-rose-950/40 border border-rose-500/30 text-rose-300 rounded-xl text-sm flex items-center gap-2">
